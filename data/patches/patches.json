@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "index_url": "https://r6s.huijiwiki.com/wiki/更新补丁总表",
+  "generated_at": "2026-07-26T13:13:13.429371+08:00",
+  "patches": [
+    {
+      "patch": "Y11S2.1",
+      "season": "Y11S2",
+      "season_name": "系统覆盖行动",
+      "released": "2026-06-23",
+      "wiki_url": "https://r6s.huijiwiki.com/wiki/Y11S2.1%E6%9B%B4%E6%96%B0%E8%A1%A5%E4%B8%81",
+      "official_url": "https://www.ubisoft.com/zh-tw/game/rainbow-six/siege/news-updates/7tAny5W9p4yrHmIiH51noI/y11s21-patch-notes",
+      "changes": [
+        {
+          "direction": "削弱",
+          "subject": "Dokkaebi",
+          "detail": "「剿截代码」技能时间结束后增加 7 秒的使用冷却。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Sens",
+          "detail": "「R.O.U.投影系统」电池续航时间提升至 15 秒（原为13秒）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "IQ",
+          "detail": "「电子设备侦测器」侦测范围提升至 22 米（原为20米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Ash",
+          "detail": "「爆破弹」爆炸伤害范围提升至 2.2 米（原为 2 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Finka",
+          "detail": "「肾上腺素激发」技能冷却时间降低至 18 秒（原为20秒）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Thatcher",
+          "detail": "「E.G.S.干扰器」效果半径提升至 1.85 米（原为1.75米）。"
+        },
+        {
+          "direction": "削弱",
+          "subject": "Thorn",
+          "detail": "「剃刀花榴弹」命中后施加的跛行效果缩短至 10 秒（原为15秒）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Zero",
+          "detail": "SC3000K降低水平后坐力 。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Sentry",
+          "detail": "防弹摄像头电磁脉冲波的爆炸范围提升至 0.75 米（原为 0.55 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Mute",
+          "detail": "防弹摄像头电磁脉冲波的爆炸范围提升至 0.75 米（原为 0.55 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Castle",
+          "detail": "防弹摄像头电磁脉冲波的爆炸范围提升至 0.75 米（原为 0.55 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Doc",
+          "detail": "防弹摄像头电磁脉冲波的爆炸范围提升至 0.75 米（原为 0.55 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Kapkan",
+          "detail": "防弹摄像头电磁脉冲波的爆炸范围提升至 0.75 米（原为 0.55 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Jäger",
+          "detail": "防弹摄像头电磁脉冲波的爆炸范围提升至 0.75 米（原为 0.55 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Frost",
+          "detail": "防弹摄像头电磁脉冲波的爆炸范围提升至 0.75 米（原为 0.55 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Lesion",
+          "detail": "防弹摄像头电磁脉冲波的爆炸范围提升至 0.75 米（原为 0.55 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Vigil",
+          "detail": "防弹摄像头电磁脉冲波的爆炸范围提升至 0.75 米（原为 0.55 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Goyo",
+          "detail": "防弹摄像头电磁脉冲波的爆炸范围提升至 0.75 米（原为 0.55 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Melusi",
+          "detail": "防弹摄像头电磁脉冲波的爆炸范围提升至 0.75 米（原为 0.55 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Aruni",
+          "detail": "防弹摄像头电磁脉冲波的爆炸范围提升至 0.75 米（原为 0.55 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Thunderbird",
+          "detail": "防弹摄像头电磁脉冲波的爆炸范围提升至 0.75 米（原为 0.55 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Fenrir",
+          "detail": "防弹摄像头电磁脉冲波的爆炸范围提升至 0.75 米（原为 0.55 米）。"
+        }
+      ]
+    },
+    {
+      "patch": "Y11S2.2",
+      "season": "Y11S2",
+      "season_name": "系统覆盖行动",
+      "released": "2026-07-14",
+      "wiki_url": "https://r6s.huijiwiki.com/wiki/Y11S2.2%E6%9B%B4%E6%96%B0%E8%A1%A5%E4%B8%81",
+      "official_url": "https://www.ubisoft.com/zh-tw/game/rainbow-six/siege/news-updates/3IoMKS8f3AHlOwBQXfiytt/y11s22-midseason-patch-notes",
+      "changes": [
+        {
+          "direction": "混合",
+          "subject": "Dokkaebi",
+          "detail": "「剿截代码」现对目标单独计算冷却时间（原为全局固定冷却）。；冷却时间延长至 14 秒（原为 7 秒）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Wamai",
+          "detail": "「磁力销毁系统」；充能刷新间隔缩短至 20 秒（原为 40 秒）。；最大总充能数提高至 7 个（原为 6 个）。；启动时间缩短至 0.5 秒（原为 1.5 秒）。；新增机动护盾。；冲击手榴弹被替换为遥控炸药。"
+        },
+        {
+          "direction": "混合",
+          "subject": "Jäger",
+          "detail": "调整为3速度与1生命值（原为2速度与2生命值）。；416ccarbine降低水平和垂直后坐力。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Zofia",
+          "detail": "「KS79“生命线”双管发射器」；震撼弹弹药数量增加至 3 发（原为 2 发）。；冲击弹弹药数量增加至 3 发（原为 2 发）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Rauora",
+          "detail": "「D.O.M.装甲板」每次射击之间的冷却时间缩短至 1 秒（原为 3 秒）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Melusi",
+          "detail": "「幽鸣音波防御装置」的作用范围扩大至 4.3 米（原为 4 米）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Twitch",
+          "detail": "「电击无人机」的激光充能时间缩短至 28 秒（原为 30 秒）。"
+        },
+        {
+          "direction": "增强",
+          "subject": "Lesion",
+          "detail": "「蛊针陷阱」的补充时间缩短至 25 秒（原为 30 秒）。"
+        }
+      ]
+    }
+  ]
+}

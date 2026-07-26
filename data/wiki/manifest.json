@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "season": "Y11S2",
+  "season_name": "系统覆盖行动",
+  "patch": "Y11S2.2",
+  "fetched_at": "2026-07-26T13:13:13.429371+08:00",
+  "sources": {
+    "operator": "https://r6s.huijiwiki.com/wiki/Data:Operator.tabx",
+    "weapon": "https://r6s.huijiwiki.com/wiki/Data:WeaponData.tabx",
+    "weapon_config": "https://r6s.huijiwiki.com/wiki/Data:WeaponConfig.tabx"
+  },
+  "counts": {
+    "operator": 77,
+    "weapon": 113,
+    "weapon_config": 306
+  }
+}

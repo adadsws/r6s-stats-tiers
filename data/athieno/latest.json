@@ -1,0 +1,49 @@
+{
+  "source": {
+    "creator": "Athieno",
+    "title": "OFFICIAL Operator Tier List in Y11S2",
+    "url": "https://youtu.be/fAjTjhNdJe4",
+    "video_id": "fAjTjhNdJe4",
+    "published": "2026-06-02",
+    "season": "Y11S2",
+    "covered_patch": "Y11S2",
+    "covered_through": "2026-06-02",
+    "coverage_basis": "人工核对视频最终完整榜单画面",
+    "final_frame": "33:44",
+    "captured_at": "2026-07-25T00:00:00+08:00"
+  },
+  "score_map": {
+    "S": 100,
+    "A": 85,
+    "B": 70,
+    "C": 55,
+    "D": 40,
+    "F": 20,
+    "boof": 0
+  },
+  "tiers": {
+    "S": [
+      "solid-snake", "aruni", "ace", "azami", "blitz", "capitao", "clash",
+      "deimos", "dokkaebi", "glaz", "grim", "kaid", "mira", "montagne",
+      "mute", "thermite", "thorn", "tubarao", "warden", "ying"
+    ],
+    "A": [
+      "vigil", "zofia", "striker", "smoke", "bandit", "blackbeard", "brava",
+      "castle", "ela", "flores", "goyo", "gridlock", "hibana", "ram", "lion",
+      "nomad", "sens", "solis", "tachanka", "thatcher", "valkyrie", "twitch",
+      "wamai"
+    ],
+    "B": [
+      "sledge", "maverick", "melusi", "ash", "pulse", "buck", "denari", "echo",
+      "fenrir", "iq", "jackal", "jager", "kali", "lesion", "mozzie", "rauora",
+      "skopos", "sentry"
+    ],
+    "C": [
+      "amaru", "finka", "fuze", "kapkan", "nokk", "maestro", "oryx", "osa",
+      "zero"
+    ],
+    "D": ["frost"],
+    "F": ["caveira", "thunderbird", "alibi", "doc", "iana"],
+    "boof": ["rook"]
+  }
+}
