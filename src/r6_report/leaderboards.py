@@ -12,12 +12,13 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.properties import PageSetupProperties
 from PIL import Image as PillowImage
-from PIL import ImageDraw, ImageFont
 
+from .gadget_slots import arrange_gadgets
 from .patch_notes import (
     PatchNotesError,
     add_patch_notes_sheet,
 )
+from . import report_theme as theme
 from .sources import ReportSources, SourceDataError, load_report_sources
 from .tier_chart import (
     CARDS_PER_ROW,
@@ -72,7 +73,6 @@ DEFENSE_GADGET_NAMES = {
     "冲击手榴弹": "冲击手榴弹",
 }
 PATCH_DIRECTIONS = {"增强", "削弱", "混合"}
-GADGETS_PER_LINE = 4
 
 
 class LeaderboardError(Exception):
@@ -423,7 +423,12 @@ def draw_gadget_token(
     quantity: Optional[int],
     destination: Path,
 ) -> None:
-    canvas = PillowImage.new("RGBA", (24, 20), (0, 0, 0, 0))
+    canvas_width, canvas_height = theme.XLSX_GADGET_TOKEN_PX
+    canvas = PillowImage.new(
+        "RGBA",
+        (canvas_width, canvas_height),
+        (0, 0, 0, 0),
+    )
 
     with PillowImage.open(source) as image:
         icon = image.convert("RGBA")
@@ -431,7 +436,10 @@ def draw_gadget_token(
         if visible_bounds is None:
             raise LeaderboardError("次要装备图标没有可见像素：%s" % source)
         icon = icon.crop(visible_bounds)
-        scale = min(16 / icon.width, 16 / icon.height)
+        scale = min(
+            theme.XLSX_GADGET_ICON_BOX_PX / icon.width,
+            theme.XLSX_GADGET_ICON_BOX_PX / icon.height,
+        )
         icon = icon.resize(
             (
                 max(1, round(icon.width * scale)),
@@ -441,28 +449,10 @@ def draw_gadget_token(
         )
         canvas.alpha_composite(
             icon,
-            ((18 - icon.width) // 2 + 1, (20 - icon.height) // 2),
-        )
-
-    if quantity is not None:
-        draw = ImageDraw.Draw(canvas)
-        draw.rounded_rectangle(
-            (13, 8, 23, 19),
-            radius=2,
-            fill=(255, 255, 255, 245),
-            outline=(20, 22, 26, 255),
-            width=1,
-        )
-        text = str(quantity)
-        font = ImageFont.load_default()
-        box = draw.textbbox((0, 0), text, font=font)
-        width = box[2] - box[0]
-        height = box[3] - box[1]
-        draw.text(
-            (18 - width / 2, 13.5 - height / 2 - box[1]),
-            text,
-            font=font,
-            fill=(20, 22, 26, 255),
+            (
+                (canvas_width - icon.width) // 2,
+                (canvas_height - icon.height) // 2,
+            ),
         )
     canvas.save(destination)
 
@@ -487,12 +477,12 @@ def _render_side_sheet(
     )
     title = sheet.cell(1, 1, "%s · %s" % (side, spec.title))
     title.font = Font(
-        name="Microsoft YaHei",
-        size=16,
+        name=theme.FONT_FAMILY,
+        size=theme.XLSX_FONT_SIZES["title"],
         bold=True,
-        color="FFFFFF",
+        color=theme.COLOURS["white"],
     )
-    title.fill = PatternFill("solid", fgColor="17191D")
+    title.fill = PatternFill("solid", fgColor=theme.COLOURS["title_fill"])
     title.alignment = Alignment(horizontal="left", vertical="center")
     sheet.row_dimensions[1].height = 28
     sheet.row_dimensions[2].height = 5
@@ -507,15 +497,20 @@ def _render_side_sheet(
             get_column_letter(badge_column + 5)
         ].width = 2.5
 
-    thin_gray = Side(style="thin", color="CDD1D5")
+    thin_gray = Side(style="thin", color=theme.COLOURS["border"])
     card_border = Border(
         left=thin_gray,
         right=thin_gray,
         top=thin_gray,
         bottom=thin_gray,
     )
-    card_fill = PatternFill("solid", fgColor="F4F5F7")
-    normal_font = Font(name="Microsoft YaHei", size=9, color="202327")
+    card_fill = PatternFill("solid", fgColor=theme.COLOURS["card_fill"])
+    missing_fill = PatternFill("solid", fgColor=theme.MISSING_FILL)
+    normal_font = Font(
+        name=theme.FONT_FAMILY,
+        size=theme.XLSX_FONT_SIZES["body"],
+        color=theme.COLOURS["text"],
+    )
     current_row = 3
 
     for band in band_order(spec.key, side):
@@ -532,19 +527,14 @@ def _render_side_sheet(
             rpm_row = current_row + 2
             gadget_row = current_row + 3
             sheet.row_dimensions[name_row].height = 18
-            sheet.row_dimensions[feature_row].height = 17
-            sheet.row_dimensions[rpm_row].height = 17
-            gadget_lines = max(
-                (
-                    (len(card.gadgets) + GADGETS_PER_LINE - 1)
-                    // GADGETS_PER_LINE
-                    for card in chunk
-                ),
-                default=1,
-            )
-            sheet.row_dimensions[gadget_row].height = max(
-                20,
-                gadget_lines * 20,
+            sheet.row_dimensions[
+                feature_row
+            ].height = theme.XLSX_CARD_BODY_ROW_PT
+            sheet.row_dimensions[
+                rpm_row
+            ].height = theme.XLSX_CARD_BODY_ROW_PT
+            sheet.row_dimensions[gadget_row].height = (
+                2 * theme.XLSX_CARD_BODY_ROW_PT
             )
 
             for slot in range(CARDS_PER_ROW):
@@ -613,24 +603,22 @@ def _render_side_sheet(
                 secondary_shotgun_cell = sheet.cell(
                     feature_row,
                     first_info,
-                    "副喷 %s"
-                    % ("✓" if card.has_secondary_shotgun else "-"),
+                    theme.feature_text("副喷", card.has_secondary_shotgun),
                 )
                 primary_sniper_cell = sheet.cell(
                     feature_row,
                     third_info,
-                    "主狙 %s"
-                    % ("✓" if card.has_semiautomatic else "-"),
+                    theme.feature_text("主狙", card.has_semiautomatic),
                 )
                 secondary_rpm_cell = sheet.cell(
                     rpm_row,
                     first_info,
-                    "副 %s" % _format_rpms(card.secondary_rpms),
+                    theme.rpm_text("副", card.secondary_rpms),
                 )
                 primary_rpm_cell = sheet.cell(
                     rpm_row,
                     third_info,
-                    "主 %s" % _format_rpms(card.primary_rpms),
+                    theme.rpm_text("主", card.primary_rpms),
                 )
 
                 for cell in (
@@ -647,14 +635,21 @@ def _render_side_sheet(
                         vertical="center",
                         shrink_to_fit=True,
                     )
+                    if theme.is_missing_field(cell.value):
+                        cell.fill = missing_fill
+                name_cell.font = Font(
+                    name=theme.FONT_FAMILY,
+                    size=theme.XLSX_FONT_SIZES["name"],
+                    color=theme.COLOURS["text"],
+                )
                 tier_cell.font = Font(
                     name="Arial",
-                    size=9,
+                    size=theme.XLSX_FONT_SIZES["body"],
                     bold=True,
                     color=(
-                        "FFFFFF"
+                        theme.COLOURS["white"]
                         if card.tier in ("S", "A", "D", "F")
-                        else "1B1D20"
+                        else theme.COLOURS["text_strong"]
                     ),
                 )
                 tier_cell.fill = PatternFill(
@@ -683,19 +678,28 @@ def _render_side_sheet(
                     4,
                     2,
                 )
-                for gadget_index, gadget in enumerate(card.gadgets):
+                for gadget_slot, gadget in enumerate(
+                    arrange_gadgets(card.side, card.gadgets)
+                ):
+                    if gadget is None:
+                        continue
+                    gadget_column = (
+                        gadget_slot % theme.GADGETS_PER_LINE
+                    )
+                    gadget_line = gadget_slot // theme.GADGETS_PER_LINE
                     token = _excel_image(
                         token_paths[(gadget.name, gadget.quantity)]
                     )
                     _add_offset_image(
                         sheet,
                         token,
-                        first_info,
+                        first_info + gadget_column,
                         gadget_row,
-                        24,
-                        20,
-                        2 + (gadget_index % GADGETS_PER_LINE) * 24,
-                        1 + (gadget_index // GADGETS_PER_LINE) * 20,
+                        theme.XLSX_GADGET_TOKEN_PX[0],
+                        theme.XLSX_GADGET_TOKEN_PX[1],
+                        theme.XLSX_GADGET_COLUMN_OFFSET_PX,
+                        gadget_line
+                        * theme.XLSX_GADGET_TOKEN_PX[1],
                     )
             current_row += 4
 
@@ -710,8 +714,8 @@ def _render_side_sheet(
         band_color = _band_color(spec.key, band, side)
         band_cell.fill = PatternFill("solid", fgColor=band_color)
         band_cell.font = Font(
-            name="Microsoft YaHei",
-            size=12,
+            name=theme.FONT_FAMILY,
+            size=theme.XLSX_FONT_SIZES["band"],
             bold=True,
             color=_contrast_text_color(band_color),
         )
@@ -742,11 +746,6 @@ def _render_side_sheet(
         last_column_letter,
         current_row - 1,
     )
-
-
-def _format_rpms(rates: Tuple[int, ...]) -> str:
-    return "/".join(str(rate) for rate in rates) or "-"
-
 
 def _band_color(dimension: str, band: str, side: str) -> str:
     if dimension == "video":

@@ -12,6 +12,8 @@ from reportlab.lib.units import mm
 
 import _path_setup
 from r6_report import leaderboards as lb
+from r6_report import pdf_leaderboards as pdf_lb
+from r6_report import report_theme as theme
 from r6_report import tier_chart as tier
 from source_fixtures import make_report_sources
 
@@ -440,6 +442,23 @@ class LeaderboardWorkbookTests(unittest.TestCase):
             sheet["E3"].fill.fgColor.rgb[-6:],
             tier.TIER_COLORS["S"],
         )
+        missing_sheet = workbook["防守方视频Tier榜"]
+        defender_name = self._card_name_cell(missing_sheet, "Defender")
+        missing_cells = (
+            missing_sheet.cell(defender_name.row + 1, defender_name.column),
+            missing_sheet.cell(defender_name.row + 1, defender_name.column + 2),
+            missing_sheet.cell(defender_name.row + 2, defender_name.column),
+            missing_sheet.cell(defender_name.row + 2, defender_name.column + 2),
+        )
+        self.assertEqual(
+            tuple(cell.value for cell in missing_cells),
+            ("副喷 -", "主狙 -", "副 -", "主 -"),
+        )
+        for cell in missing_cells:
+            self.assertEqual(
+                cell.fill.fgColor.rgb[-6:],
+                theme.MISSING_FILL,
+            )
         self.assertIsNone(workbook["补丁说明"].freeze_panes)
 
     def test_appends_patch_marker_after_video_tier_on_every_leaderboard(self):
@@ -547,19 +566,70 @@ class LeaderboardWorkbookTests(unittest.TestCase):
             with Image.open(output) as rendered:
                 red_pixels = [
                     pixel
-                    for pixel in rendered.convert("RGBA").getdata()
+                    for pixel in rendered.convert(
+                        "RGBA"
+                    ).get_flattened_data()
                     if pixel[:3] == (231, 76, 60)
                 ]
             self.assertEqual(red_pixels, [])
 
+    def test_gadget_token_omits_quantity_and_matches_body_row(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.png"
+            output_two = root / "output-two.png"
+            output_three = root / "output-three.png"
+            Image.new("RGBA", (32, 16), "black").save(source)
+
+            lb.draw_gadget_token(source, 2, output_two)
+            lb.draw_gadget_token(source, 3, output_three)
+
+            with (
+                Image.open(output_two) as rendered_two,
+                Image.open(output_three) as rendered_three,
+            ):
+                self.assertEqual(rendered_two.size, (24, 22))
+                self.assertEqual(
+                    rendered_two.convert("RGBA").tobytes(),
+                    rendered_three.convert("RGBA").tobytes(),
+                )
+                alpha_bounds = rendered_two.getchannel("A").getbbox()
+                self.assertIsNotNone(alpha_bounds)
+                self.assertEqual(
+                    max(
+                        alpha_bounds[2] - alpha_bounds[0],
+                        alpha_bounds[3] - alpha_bounds[1],
+                    ),
+                    22,
+                )
+
     def test_wraps_seven_gadgets_inside_striker_and_sentry_cards(self):
-        gadgets = tuple("装备%d" % index for index in range(1, 8))
-        attacker = make_card("Striker", 1, gadgets=gadgets)
+        attacker = make_card(
+            "Striker",
+            1,
+            gadgets=(
+                "烟雾弹",
+                "电磁脉冲式冲击弹",
+                "破片手榴弹",
+                "爆破炸药",
+                "硬突破炸药",
+                "阔剑地雷",
+                "闪光弹",
+            ),
+        )
         defender = make_card(
             "Sentry",
             1,
             side="防守方",
-            gadgets=gadgets,
+            gadgets=(
+                "感应警报器",
+                "冲击手榴弹",
+                "倒刺铁丝网",
+                "遥控炸药",
+                "观测工具阻拦器",
+                "机动护盾",
+                "防弹摄像头",
+            ),
         )
 
         with tempfile.TemporaryDirectory() as directory:
@@ -578,24 +648,160 @@ class LeaderboardWorkbookTests(unittest.TestCase):
                 else "Sentry"
             )
             name_cell = self._card_name_cell(sheet, operator_name)
-            gadget_anchors = [
-                image.anchor._from
+            gadget_row = name_cell.row + 3
+            gadget_images = [
+                image
                 for image in sheet._images
                 if image.anchor._from.row == name_cell.row + 2
-                and image.anchor._from.col == name_cell.column - 1
+                and name_cell.column - 1
+                <= image.anchor._from.col
+                <= name_cell.column + 2
             ]
-            self.assertEqual(len(gadget_anchors), 7)
+            self.assertEqual(len(gadget_images), 7)
             self.assertEqual(
-                len({anchor.rowOff for anchor in gadget_anchors}),
-                2,
+                [
+                    (
+                        image.anchor._from.col,
+                        round(image.anchor._from.colOff / 9525),
+                        round(image.anchor._from.rowOff / 9525),
+                    )
+                    for image in gadget_images
+                ],
+                [
+                    (name_cell.column - 1, 14, 0),
+                    (name_cell.column, 14, 0),
+                    (name_cell.column + 1, 14, 0),
+                    (name_cell.column - 1, 14, 22),
+                    (name_cell.column, 14, 22),
+                    (name_cell.column + 1, 14, 22),
+                    (name_cell.column + 2, 14, 22),
+                ],
             )
-            self.assertGreaterEqual(
-                sheet.row_dimensions[name_cell.row + 3].height,
-                38,
+            self.assertEqual(
+                sheet.row_dimensions[gadget_row].height,
+                34,
             )
+            row_height_px = round(34 * 96 / 72)
+            for image in gadget_images:
+                top_px = round(image.anchor._from.rowOff / 9525)
+                height_px = round(image.anchor.ext.cy / 9525)
+                self.assertLessEqual(
+                    top_px + height_px,
+                    row_height_px,
+                )
+
+    def test_sparse_gadget_keeps_its_fixed_xlsx_slot(self):
+        attacker = make_card(
+            "Sparse",
+            1,
+            gadgets=("烟雾弹",),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            workbook = self._write_workbook(
+                Path(directory),
+                "video",
+                (attacker,),
+                (),
+            )
+
+        sheet = workbook["进攻方视频Tier榜"]
+        name_cell = self._card_name_cell(sheet, "Sparse")
+        gadget_row = name_cell.row + 3
+        gadget_images = [
+            image
+            for image in sheet._images
+            if image.anchor._from.row == name_cell.row + 2
+        ]
+        self.assertEqual(len(gadget_images), 1)
+        self.assertEqual(
+            (
+                gadget_images[0].anchor._from.col,
+                round(gadget_images[0].anchor._from.colOff / 9525),
+                round(gadget_images[0].anchor._from.rowOff / 9525),
+            ),
+            (name_cell.column + 2, 14, 22),
+        )
+        self.assertEqual(
+            sheet.row_dimensions[gadget_row].height,
+            34,
+        )
 
 
 class LeaderboardCliTests(unittest.TestCase):
+    def test_pdf_gadget_image_preserves_aspect_ratio(self):
+        with tempfile.TemporaryDirectory() as directory:
+            icon = Path(directory) / "wide.png"
+            Image.new("RGBA", (40, 20), "black").save(icon)
+
+            self.assertEqual(
+                pdf_lb._fit_image_size(icon, 20, 20),
+                (20, 10),
+            )
+
+    def test_pdf_gadget_row_omits_name_and_uses_equal_slots(self):
+        card = make_card("Attacker", 1, gadgets=("烟雾弹",))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            badge_dir = root / "badges"
+            badge_dir.mkdir()
+            Image.new("RGBA", (64, 64), "blue").save(
+                badge_dir / "attacker.png"
+            )
+            icon_path = root / "wide.png"
+            padded_icon = Image.new("RGBA", (290, 100), (0, 0, 0, 0))
+            padded_icon.paste(
+                Image.new("RGBA", (40, 20), "black"),
+                (100, 40),
+            )
+            padded_icon.save(icon_path)
+
+            pdf_lb._register_fonts()
+            card_table = pdf_lb._card_flowable(
+                card,
+                badge_dir,
+                {"烟雾弹": icon_path},
+                "",
+            )
+
+            gadget_table = card_table._cellvalues[1][0]
+            self.assertEqual(len(gadget_table._cellvalues), 2)
+            self.assertEqual(
+                gadget_table._colWidths,
+                [19 * mm, 19 * mm, 19 * mm, 19 * mm],
+            )
+            self.assertEqual(
+                gadget_table._cellvalues[0],
+                ["", "", "", ""],
+            )
+            self.assertEqual(
+                gadget_table._cellvalues[1][:3],
+                ["", "", ""],
+            )
+            gadget_icon = gadget_table._cellvalues[1][3]
+            self.assertIsInstance(gadget_icon, pdf_lb.Image)
+            self.assertEqual(gadget_icon.hAlign, "CENTER")
+            self.assertAlmostEqual(
+                gadget_icon.drawWidth,
+                6 * mm,
+                delta=0.01,
+            )
+            self.assertAlmostEqual(
+                gadget_icon.drawHeight,
+                3 * mm,
+                delta=0.01,
+            )
+
+    def test_pdf_patch_body_uses_white_text_only_in_direction_cell(self):
+        self.assertEqual(
+            pdf_lb._patch_text_color(1, 0, "增强"),
+            "#" + theme.COLOURS["white"],
+        )
+        self.assertEqual(
+            pdf_lb._patch_text_color(1, 1, "增强"),
+            "#" + theme.COLOURS["text"],
+        )
+
     def test_main_generates_five_workbooks_and_five_complete_pdfs(self):
         attacker = make_card(
             "Attacker",
@@ -718,6 +924,11 @@ class LeaderboardCliTests(unittest.TestCase):
                 self.assertIn("进攻方", text)
                 self.assertIn("防守方", text)
                 self.assertIn("补丁说明", text)
+                self.assertIn("副喷 ✓", text)
+                self.assertIn("主狙 ✓", text)
+                self.assertNotIn("副喷 是", text)
+                self.assertNotIn("主狙 是", text)
+                self.assertNotIn("×2", text)
                 self.assertIn("进攻方", page_texts[0])
                 self.assertNotIn("防守方", page_texts[0])
                 self.assertNotIn("补丁说明", page_texts[0])

@@ -6,6 +6,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.worksheet import Worksheet
 
 from .sources import ReportSources
+from . import report_theme as theme
 
 
 class WorkbookSourceError(ValueError):
@@ -70,12 +71,12 @@ def append_source_footer(
         ),
     )
 
-    fill = PatternFill("solid", fgColor="E7E6E6")
+    fill = PatternFill("solid", fgColor=theme.MISSING_FILL)
     font = Font(
-        name="Microsoft YaHei",
-        size=8,
+        name=theme.FONT_FAMILY,
+        size=theme.XLSX_FONT_SIZES["source"],
         italic=True,
-        color="595959",
+        color=theme.COLOURS["text_muted"],
     )
     for offset, (text, url) in enumerate(rows):
         row = first_row + offset

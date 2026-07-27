@@ -74,6 +74,15 @@ GADGET_FILES = {
     "阔剑地雷": "文件:R6S gp Claymore.png",
     "防弹摄像头": "文件:R6S gp Bulletproof camera.png",
 }
+GADGET_DIRECT_URLS = {
+    "电磁脉冲式冲击弹": (
+        "https://staticctf.ubisoft.com/"
+        "J3yJr34U2pZ2Ieem48Dwy9uqj5PNUQTn/"
+        "7izurbA5jDmnsmdeBdgKZO/"
+        "29bca81243dda4084a92521ac0c03592/"
+        "R6S-EMP-Impact-grenade.png"
+    ),
+}
 API_URL = "https://r6s.huijiwiki.com/api.php"
 HUJI_IMAGE_PREFIX = "https://huiji-public.huijistatic.com/r6s/"
 TIER_ORDER = VISIBLE_TIER_ORDER
@@ -297,7 +306,9 @@ def prepare_gadget_icons(
         raise TierChartError("未找到 curl.exe 或 curl，请先安装并加入 PATH")
 
     for name, destination in missing:
-        url = resolve_wiki_file_url(GADGET_FILES[name], query_json)
+        url = GADGET_DIRECT_URLS.get(name)
+        if url is None:
+            url = resolve_wiki_file_url(GADGET_FILES[name], query_json)
         last_error = "未知下载错误"
         for attempt in range(1, 5):
             temporary = destination.with_suffix(".download")
@@ -322,6 +333,16 @@ def prepare_gadget_icons(
                 )
                 if not _is_valid_image(temporary):
                     raise ValueError("下载内容不是有效图片")
+                if name in GADGET_DIRECT_URLS:
+                    with PillowImage.open(temporary) as image:
+                        alpha = image.convert("RGBA").getchannel("A")
+                        line_art = PillowImage.new(
+                            "RGBA",
+                            image.size,
+                            (0, 0, 0, 0),
+                        )
+                        line_art.putalpha(alpha)
+                        line_art.save(temporary, format="PNG")
                 temporary.replace(destination)
                 break
             except (OSError, subprocess.CalledProcessError, ValueError) as exc:

@@ -9,18 +9,12 @@ from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.workbook.workbook import Workbook
 
 from .sources import PatchRecord, ReportSources
+from . import report_theme as theme
 from .tiers import SCORE_TO_DISPLAY_TIER
 from .workbook_sources import append_source_footer
 
 
 PATCH_SHEET_TITLE = "补丁说明"
-DIRECTION_COLOURS = {
-    "增强": "548235",
-    "削弱": "C00000",
-    "混合": "BF9000",
-}
-
-
 class PatchNotesError(ValueError):
     """Raised when patch metadata cannot be rendered safely."""
 
@@ -53,7 +47,7 @@ def _validate_metadata(
                     "patch source must use HTTPS: %s" % url
                 )
         for change in patch.changes:
-            if change.direction not in DIRECTION_COLOURS:
+            if change.direction not in theme.PATCH_DIRECTION_COLOURS:
                 raise PatchNotesError(
                     "unknown patch direction: %s" % change.direction
                 )
@@ -77,9 +71,15 @@ def _style_patch_header(sheet: Worksheet, row: int, patch: PatchRecord) -> None:
         "%s · %s · %s"
         % (patch.patch, patch.released.isoformat(), patch.season_name),
     )
-    cell.fill = PatternFill("solid", fgColor="5B9BD5")
+    cell.fill = PatternFill(
+        "solid",
+        fgColor=theme.COLOURS["patch_header_fill"],
+    )
     cell.font = Font(
-        name="Microsoft YaHei", size=11, bold=True, color="FFFFFF"
+        name=theme.FONT_FAMILY,
+        size=theme.XLSX_FONT_SIZES["patch_header"],
+        bold=True,
+        color=theme.COLOURS["white"],
     )
     cell.alignment = Alignment(vertical="center")
     sheet.row_dimensions[row].height = 25
@@ -92,14 +92,18 @@ def _add_source_row(
 ) -> None:
     sheet.cell(row, 1, "灰机 Wiki")
     sheet.cell(row, 1).font = Font(
-        name="Microsoft YaHei", size=8, bold=True
+        name=theme.FONT_FAMILY,
+        size=theme.XLSX_FONT_SIZES["source"],
+        bold=True,
     )
     wiki = sheet.cell(row, 2, patch.wiki_url)
     wiki.hyperlink = patch.wiki_url
     wiki.style = "Hyperlink"
     sheet.cell(row, 4, "Ubisoft")
     sheet.cell(row, 4).font = Font(
-        name="Microsoft YaHei", size=8, bold=True
+        name=theme.FONT_FAMILY,
+        size=theme.XLSX_FONT_SIZES["source"],
+        bold=True,
     )
     official = sheet.cell(row, 5, patch.official_url)
     official.hyperlink = patch.official_url
@@ -121,9 +125,15 @@ def _add_change_header(sheet: Worksheet, row: int) -> None:
     headers = ("方向", "补丁", "日期", "干员/对象", "视频评分", "更新内容")
     for column, header in enumerate(headers, start=1):
         cell = sheet.cell(row, column, header)
-        cell.fill = PatternFill("solid", fgColor="4472C4")
+        cell.fill = PatternFill(
+            "solid",
+            fgColor=theme.COLOURS["section_fill"],
+        )
         cell.font = Font(
-            name="Microsoft YaHei", size=9, bold=True, color="FFFFFF"
+            name=theme.FONT_FAMILY,
+            size=theme.XLSX_FONT_SIZES["body"],
+            bold=True,
+            color=theme.COLOURS["white"],
         )
         cell.alignment = Alignment(horizontal="center", vertical="center")
     sheet.row_dimensions[row].height = 22
@@ -143,7 +153,10 @@ def _add_patch_changes(
         )
         cell = sheet.cell(row, 1, "无影响本报告字段的变更")
         cell.font = Font(
-            name="Microsoft YaHei", size=9, italic=True, color="595959"
+            name=theme.FONT_FAMILY,
+            size=theme.XLSX_FONT_SIZES["body"],
+            italic=True,
+            color=theme.COLOURS["text_muted"],
         )
         cell.alignment = Alignment(vertical="center")
         sheet.row_dimensions[row].height = 24
@@ -161,10 +174,14 @@ def _add_patch_changes(
         for column, value in enumerate(values, start=1):
             cell = sheet.cell(row, column, value)
             cell.font = Font(
-                name="Microsoft YaHei",
-                size=9,
+                name=theme.FONT_FAMILY,
+                size=theme.XLSX_FONT_SIZES["body"],
                 bold=column == 1,
-                color="FFFFFF" if column == 1 else "1F1F1F",
+                color=(
+                    theme.COLOURS["white"]
+                    if column == 1
+                    else theme.COLOURS["text"]
+                ),
             )
             cell.alignment = Alignment(
                 horizontal="center" if column < 6 else "left",
@@ -175,7 +192,7 @@ def _add_patch_changes(
             if column == 1:
                 cell.fill = PatternFill(
                     "solid",
-                    fgColor=DIRECTION_COLOURS[change.direction],
+                    fgColor=theme.PATCH_DIRECTION_COLOURS[change.direction],
                 )
         sheet.row_dimensions[row].height = 32
         row += 1
@@ -199,9 +216,15 @@ def add_patch_notes_sheet(
     sheet.merge_cells("A1:F1")
     sheet["A1"] = "%s 视频评分后续补丁说明" % sources.rating.season
     sheet["A1"].font = Font(
-        name="Microsoft YaHei", size=18, bold=True, color="FFFFFF"
+        name=theme.FONT_FAMILY,
+        size=theme.XLSX_FONT_SIZES["patch_title"],
+        bold=True,
+        color=theme.COLOURS["white"],
     )
-    sheet["A1"].fill = PatternFill("solid", fgColor="1F4E78")
+    sheet["A1"].fill = PatternFill(
+        "solid",
+        fgColor=theme.COLOURS["sheet_title_fill"],
+    )
     sheet["A1"].alignment = Alignment(vertical="center")
     sheet.row_dimensions[1].height = 34
 
@@ -211,9 +234,15 @@ def add_patch_notes_sheet(
         "均按灰机 Wiki 抓取时间更新。" % sources.rating.season
     )
     sheet["A2"].font = Font(
-        name="Microsoft YaHei", size=10, bold=True, color="1F1F1F"
+        name=theme.FONT_FAMILY,
+        size=theme.XLSX_FONT_SIZES["name"],
+        bold=True,
+        color=theme.COLOURS["text"],
     )
-    sheet["A2"].fill = PatternFill("solid", fgColor="D9EAF7")
+    sheet["A2"].fill = PatternFill(
+        "solid",
+        fgColor=theme.COLOURS["note_fill"],
+    )
     sheet["A2"].alignment = Alignment(vertical="center", wrap_text=True)
     sheet.row_dimensions[2].height = 31
 
@@ -226,7 +255,10 @@ def add_patch_notes_sheet(
         )
     )
     sheet["A3"].font = Font(
-        name="Microsoft YaHei", size=9, italic=True, color="595959"
+        name=theme.FONT_FAMILY,
+        size=theme.XLSX_FONT_SIZES["body"],
+        italic=True,
+        color=theme.COLOURS["text_muted"],
     )
     sheet["A3"].alignment = Alignment(vertical="center", wrap_text=True)
     sheet.row_dimensions[3].height = 27

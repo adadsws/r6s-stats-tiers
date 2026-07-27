@@ -4,6 +4,7 @@ from openpyxl import Workbook
 
 import _path_setup
 from r6_report import patch_notes as notes
+from r6_report import report_theme as theme
 from r6_report.workbook_sources import append_source_footer
 from source_fixtures import make_report_sources
 
@@ -48,13 +49,13 @@ class PatchNotesTests(unittest.TestCase):
         direction_fills = {}
         for row in range(1, sheet.max_row + 1):
             direction = sheet.cell(row, 1).value
-            if direction in notes.DIRECTION_COLOURS:
+            if direction in theme.PATCH_DIRECTION_COLOURS:
                 direction_fills.setdefault(
                     direction, sheet.cell(row, 1).fill.fgColor.rgb[-6:]
                 )
-        self.assertEqual(direction_fills, notes.DIRECTION_COLOURS)
+        self.assertEqual(direction_fills, theme.PATCH_DIRECTION_COLOURS)
         self.assertEqual(
-            notes.DIRECTION_COLOURS,
+            theme.PATCH_DIRECTION_COLOURS,
             {
                 "增强": "548235",
                 "削弱": "C00000",
@@ -62,7 +63,7 @@ class PatchNotesTests(unittest.TestCase):
             },
         )
         for row in range(1, sheet.max_row + 1):
-            if sheet.cell(row, 1).value in notes.DIRECTION_COLOURS:
+            if sheet.cell(row, 1).value in theme.PATCH_DIRECTION_COLOURS:
                 self.assertTrue(sheet.cell(row, 1).font.bold)
                 self.assertEqual(
                     sheet.cell(row, 1).font.color.rgb[-6:],

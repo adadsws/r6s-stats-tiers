@@ -26,13 +26,17 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+from PIL import Image as PillowImage
 
+from . import report_theme as theme
+from .gadget_slots import arrange_gadgets
 from .sources import ReportSources
 from .tier_chart import CARDS_PER_ROW, OperatorCard, SOURCE_SHEETS, operator_key
 from .tiers import TIER_COLORS
 
 
 PDF_FONT = "R6Chinese"
+PDF_SYMBOL_FONT = "R6Symbols"
 PAGE_SIZE = A2
 PAGE_MARGIN = 10 * mm
 CONTENT_WIDTH = PAGE_SIZE[0] - 2 * PAGE_MARGIN
@@ -53,6 +57,21 @@ def _register_fonts() -> None:
         else:
             pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
             globals()["PDF_FONT"] = "STSong-Light"
+    if PDF_SYMBOL_FONT not in pdfmetrics.getRegisteredFontNames():
+        symbol_candidates = (
+            Path("C:/Windows/Fonts/seguisym.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        )
+        symbol_path = next(
+            (path for path in symbol_candidates if path.is_file()),
+            None,
+        )
+        if symbol_path is not None:
+            pdfmetrics.registerFont(
+                TTFont(PDF_SYMBOL_FONT, str(symbol_path))
+            )
+        else:
+            globals()["PDF_SYMBOL_FONT"] = PDF_FONT
 
 
 def _style(size=9, *, bold=False, color="#202327", align=TA_LEFT):
@@ -70,8 +89,59 @@ def _p(text, style):
     return Paragraph(escape(str(text)).replace("\n", "<br/>"), style)
 
 
-def _rpm_text(values: Tuple[int, ...]) -> str:
-    return "/".join(str(value) for value in values) or "-"
+def _feature_p(label: str, present: bool, style):
+    if not present:
+        return _p(theme.feature_text(label, False), style)
+    return Paragraph(
+        "%s <font name=\"%s\">✓</font>"
+        % (escape(label), PDF_SYMBOL_FONT),
+        style,
+    )
+
+
+def _fit_image_size(
+    path: Path,
+    box_width: float,
+    box_height: float,
+) -> Tuple[float, float]:
+    """Fit the visible part of an image without changing its aspect ratio."""
+    with PillowImage.open(path) as image:
+        visible_bounds = image.convert("RGBA").getchannel("A").getbbox()
+    if visible_bounds is None:
+        raise ValueError("image has no visible pixels: %s" % path)
+    width = visible_bounds[2] - visible_bounds[0]
+    height = visible_bounds[3] - visible_bounds[1]
+    if width <= 0 or height <= 0:
+        raise ValueError("image dimensions must be positive: %s" % path)
+    scale = min(box_width / width, box_height / height)
+    return (width * scale, height * scale)
+
+
+def _cropped_image_source(path: Path) -> BytesIO:
+    """Return a PNG stream cropped to the source image's visible pixels."""
+    with PillowImage.open(path) as image:
+        icon = image.convert("RGBA")
+        visible_bounds = icon.getchannel("A").getbbox()
+        if visible_bounds is None:
+            raise ValueError("image has no visible pixels: %s" % path)
+        icon = icon.crop(visible_bounds)
+        stream = BytesIO()
+        icon.save(stream, format="PNG")
+    stream.seek(0)
+    return stream
+
+
+def _patch_text_color(
+    row_index: int,
+    column_index: int,
+    direction: str,
+) -> str:
+    if row_index == 0 or (
+        column_index == 0
+        and direction in theme.PATCH_DIRECTION_COLOURS
+    ):
+        return "#" + theme.COLOURS["white"]
+    return "#" + theme.COLOURS["text"]
 
 
 def _card_flowable(
@@ -82,45 +152,98 @@ def _card_flowable(
 ):
     badge_path = badge_dir / (operator_key(card.name) + ".png")
     badge = Image(str(badge_path), width=15 * mm, height=15 * mm)
-    name = _p(card.name, _style(10, bold=True))
+    name = _p(
+        card.name,
+        _style(
+            theme.PDF_FONT_SIZES["name"],
+            bold=True,
+            color="#" + theme.COLOURS["text"],
+        ),
+    )
     tier = _p(
         "%s%s" % (card.tier, marker),
         _style(
-            9,
+            theme.PDF_FONT_SIZES["body"],
             bold=True,
             color=(
-                "#FFFFFF"
+                "#" + theme.COLOURS["white"]
                 if card.tier in ("S", "A", "D", "F")
-                else "#1B1D20"
+                else "#" + theme.COLOURS["text_strong"]
             ),
             align=TA_CENTER,
         ),
     )
+    secondary_shotgun_text = theme.feature_text(
+        "副喷",
+        card.has_secondary_shotgun,
+    )
+    primary_sniper_text = theme.feature_text(
+        "主狙",
+        card.has_semiautomatic,
+    )
+    secondary_rpm_text = theme.rpm_text("副", card.secondary_rpms)
+    primary_rpm_text = theme.rpm_text("主", card.primary_rpms)
     info = Table(
         [
-            [name, tier, _p("%d速" % card.speed, _style(9, align=TA_CENTER))],
             [
+                name,
+                tier,
                 _p(
-                    "副喷 %s" % ("是" if card.has_secondary_shotgun else "-"),
-                    _style(),
+                    "%d速" % card.speed,
+                    _style(
+                        theme.PDF_FONT_SIZES["body"],
+                        align=TA_CENTER,
+                    ),
                 ),
-                _p("主狙 %s" % ("是" if card.has_semiautomatic else "-"), _style()),
+            ],
+            [
+                _feature_p(
+                    "副喷",
+                    card.has_secondary_shotgun,
+                    _style(theme.PDF_FONT_SIZES["body"]),
+                ),
+                _feature_p(
+                    "主狙",
+                    card.has_semiautomatic,
+                    _style(theme.PDF_FONT_SIZES["body"]),
+                ),
                 "",
             ],
             [
-                _p("副 %s" % _rpm_text(card.secondary_rpms), _style()),
-                _p("主 %s" % _rpm_text(card.primary_rpms), _style()),
+                _p(
+                    secondary_rpm_text,
+                    _style(theme.PDF_FONT_SIZES["body"]),
+                ),
+                _p(
+                    primary_rpm_text,
+                    _style(theme.PDF_FONT_SIZES["body"]),
+                ),
                 "",
             ],
         ],
         colWidths=[30 * mm, 19 * mm, 12 * mm],
-        rowHeights=[7 * mm, 6 * mm, 6 * mm],
+        rowHeights=[
+            7 * mm,
+            theme.PDF_CARD_BODY_ROW_MM * mm,
+            theme.PDF_CARD_BODY_ROW_MM * mm,
+        ],
     )
     info.setStyle(
         TableStyle(
             [
-                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#CDD1D5")),
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F4F5F7")),
+                (
+                    "GRID",
+                    (0, 0),
+                    (-1, -1),
+                    0.35,
+                    colors.HexColor("#" + theme.COLOURS["border"]),
+                ),
+                (
+                    "BACKGROUND",
+                    (0, 0),
+                    (-1, -1),
+                    colors.HexColor("#" + theme.COLOURS["card_fill"]),
+                ),
                 (
                     "BACKGROUND",
                     (1, 0),
@@ -135,33 +258,61 @@ def _card_flowable(
                 ("TOPPADDING", (0, 0), (-1, -1), 1),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
             ]
+            + [
+                (
+                    "BACKGROUND",
+                    (column, row),
+                    (column, row),
+                    colors.HexColor("#" + theme.MISSING_FILL),
+                )
+                for column, row, value in (
+                    (0, 1, secondary_shotgun_text),
+                    (1, 1, primary_sniper_text),
+                    (0, 2, secondary_rpm_text),
+                    (1, 2, primary_rpm_text),
+                )
+                if theme.is_missing_field(value)
+            ]
         )
     )
-    gadget_row = []
-    for gadget in card.gadgets:
+    gadget_cells = []
+    for gadget in arrange_gadgets(card.side, card.gadgets):
+        if gadget is None:
+            gadget_cells.append("")
+            continue
         path = gadget_icons[gadget.name]
-        gadget_row.append(
-            Table(
-                [
-                    [
-                        Image(str(path), width=5 * mm, height=5 * mm),
-                        _p(
-                            gadget.name
-                            + (
-                                "×%d" % gadget.quantity
-                                if gadget.quantity is not None
-                                else ""
-                            ),
-                            _style(6.5),
-                        ),
-                    ]
-                ],
-                colWidths=[5 * mm, 14 * mm],
-            )
+        icon_box = theme.PDF_GADGET_ICON_BOX_MM * mm
+        image_width, image_height = _fit_image_size(
+            path,
+            icon_box,
+            icon_box,
         )
+        icon = Image(
+            _cropped_image_source(path),
+            width=image_width,
+            height=image_height,
+        )
+        icon.hAlign = "CENTER"
+        gadget_cells.append(icon)
+    gadget_rows = [
+        gadget_cells[:theme.GADGETS_PER_LINE],
+        gadget_cells[theme.GADGETS_PER_LINE:],
+    ]
     gadgets = Table(
-        [gadget_row[:4], gadget_row[4:8]] if len(gadget_row) > 4 else [gadget_row],
-        colWidths=[19 * mm] * 4,
+        gadget_rows,
+        colWidths=[19 * mm] * theme.GADGETS_PER_LINE,
+    )
+    gadgets.setStyle(
+        TableStyle(
+            [
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
     )
     card_table = Table(
         [[badge, info], [gadgets, ""]],
@@ -171,8 +322,19 @@ def _card_flowable(
     card_table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F4F5F7")),
-                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#CDD1D5")),
+                (
+                    "BACKGROUND",
+                    (0, 0),
+                    (-1, -1),
+                    colors.HexColor("#" + theme.COLOURS["card_fill"]),
+                ),
+                (
+                    "BOX",
+                    (0, 0),
+                    (-1, -1),
+                    0.5,
+                    colors.HexColor("#" + theme.COLOURS["border"]),
+                ),
                 ("SPAN", (0, 1), (1, 1)),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 2),
@@ -236,8 +398,10 @@ def _write_content_fitted_pdf(source: BytesIO, output: Path) -> None:
                 footer_stream,
                 pagesize=(PAGE_SIZE[0], height),
             )
-            footer.setFont(PDF_FONT, 7)
-            footer.setFillColor(colors.HexColor("#595959"))
+            footer.setFont(PDF_FONT, theme.PDF_FONT_SIZES["page"])
+            footer.setFillColor(
+                colors.HexColor("#" + theme.COLOURS["text_muted"])
+            )
             footer.drawRightString(
                 PAGE_SIZE[0] - 12 * mm,
                 8 * mm,
@@ -275,13 +439,30 @@ def write_leaderboard_pdf(
         if side_index:
             story.append(PageBreak())
         story.append(
-            _p("%s · %s" % (side, spec.title), _style(19, bold=True))
+            _p(
+                "%s · %s" % (side, spec.title),
+                _style(
+                    theme.PDF_FONT_SIZES["title"],
+                    bold=True,
+                    color="#" + theme.COLOURS["text"],
+                ),
+            )
         )
         story.append(Spacer(1, 3 * mm))
         groups = group_cards(normalized[side], spec.key, side)
         for band, band_cards in groups.items():
             band_header = Table(
-                [[_p(band, _style(11, bold=True, color="#FFFFFF", align=TA_CENTER))]],
+                [[
+                    _p(
+                        band,
+                        _style(
+                            theme.PDF_FONT_SIZES["band"],
+                            bold=True,
+                            color="#" + theme.COLOURS["white"],
+                            align=TA_CENTER,
+                        ),
+                    )
+                ]],
                 colWidths=[CONTENT_WIDTH],
                 rowHeights=[9 * mm],
             )
@@ -330,10 +511,27 @@ def write_leaderboard_pdf(
             story.append(KeepTogether(block))
             story.append(Spacer(1, 2 * mm))
         for line in _source_lines(report_sources):
-            story.append(_p(line, _style(7, color="#595959")))
+            story.append(
+                _p(
+                    line,
+                    _style(
+                        theme.PDF_FONT_SIZES["source"],
+                        color="#" + theme.COLOURS["text_muted"],
+                    ),
+                )
+            )
 
     story.append(PageBreak())
-    story.append(_p("补丁说明", _style(19, bold=True)))
+    story.append(
+        _p(
+            "补丁说明",
+            _style(
+                theme.PDF_FONT_SIZES["title"],
+                bold=True,
+                color="#" + theme.COLOURS["text"],
+            ),
+        )
+    )
     story.append(
         _p(
             "%s 视频评分之后至 %s"
@@ -341,7 +539,10 @@ def write_leaderboard_pdf(
                 report_sources.rating.covered_through.isoformat(),
                 report_sources.wiki.fetched_at.date().isoformat(),
             ),
-            _style(9, color="#595959"),
+            _style(
+                theme.PDF_FONT_SIZES["body"],
+                color="#" + theme.COLOURS["text_muted"],
+            ),
         )
     )
     scores = {
@@ -351,13 +552,42 @@ def write_leaderboard_pdf(
     }
     for patch in report_sources.patches:
         story.append(Spacer(1, 3 * mm))
-        story.append(
-            _p(
-                "%s · %s · %s"
-                % (patch.patch, patch.released.isoformat(), patch.season_name),
-                _style(12, bold=True, color="#FFFFFF"),
+        patch_header = Table(
+            [[
+                _p(
+                    "%s · %s · %s"
+                    % (
+                        patch.patch,
+                        patch.released.isoformat(),
+                        patch.season_name,
+                    ),
+                    _style(
+                        theme.PDF_FONT_SIZES["patch_header"],
+                        bold=True,
+                        color="#" + theme.COLOURS["white"],
+                    ),
+                )
+            ]],
+            colWidths=[CONTENT_WIDTH],
+            rowHeights=[9 * mm],
+        )
+        patch_header.setStyle(
+            TableStyle(
+                [
+                    (
+                        "BACKGROUND",
+                        (0, 0),
+                        (-1, -1),
+                        colors.HexColor(
+                            "#" + theme.COLOURS["patch_header_fill"]
+                        ),
+                    ),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                ]
             )
         )
+        story.append(patch_header)
         rows = [["方向", "对象", "视频评分", "更新内容"]]
         for change in patch.changes:
             rows.append(
@@ -370,27 +600,93 @@ def write_leaderboard_pdf(
             )
         if len(rows) == 1:
             rows.append(["-", "-", "-", "无影响本报告字段的变更"])
+        table_rows = []
+        for row_index, row in enumerate(rows):
+            table_row = []
+            for column_index, value in enumerate(row):
+                direction = row[0] if row_index else None
+                table_row.append(
+                    _p(
+                        value,
+                        _style(
+                            theme.PDF_FONT_SIZES["patch_table"],
+                            bold=(row_index == 0 or column_index == 0),
+                            color=_patch_text_color(
+                                row_index,
+                                column_index,
+                                direction,
+                            ),
+                        ),
+                    )
+                )
+            table_rows.append(table_row)
         table = Table(
-            [
-                [_p(value, _style(8, bold=index == 0)) for index, value in enumerate(row)]
-                for row in rows
-            ],
+            table_rows,
             colWidths=[22 * mm, 35 * mm, 28 * mm, 305 * mm],
             repeatRows=1,
         )
+        table_commands = [
+            (
+                "BACKGROUND",
+                (0, 0),
+                (-1, 0),
+                colors.HexColor("#" + theme.COLOURS["section_fill"]),
+            ),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            (
+                "GRID",
+                (0, 0),
+                (-1, -1),
+                0.35,
+                colors.HexColor("#BFBFBF"),
+            ),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]
+        for row_index, row in enumerate(rows[1:], start=1):
+            direction = row[0]
+            if direction in theme.PATCH_DIRECTION_COLOURS:
+                table_commands.append(
+                    (
+                        "BACKGROUND",
+                        (0, row_index),
+                        (0, row_index),
+                        colors.HexColor(
+                            "#" + theme.PATCH_DIRECTION_COLOURS[direction]
+                        ),
+                    )
+                )
+            for column_index, value in enumerate(row):
+                if str(value).strip() == "-":
+                    table_commands.append(
+                        (
+                            "BACKGROUND",
+                            (column_index, row_index),
+                            (column_index, row_index),
+                            colors.HexColor("#" + theme.MISSING_FILL),
+                        )
+                    )
         table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                    ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#BFBFBF")),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ]
-            )
+            TableStyle(table_commands)
         )
         story.append(table)
-        story.append(_p(patch.wiki_url, _style(7, color="#4472C4")))
-        story.append(_p(patch.official_url, _style(7, color="#4472C4")))
+        story.append(
+            _p(
+                patch.wiki_url,
+                _style(
+                    theme.PDF_FONT_SIZES["source"],
+                    color="#" + theme.COLOURS["link"],
+                ),
+            )
+        )
+        story.append(
+            _p(
+                patch.official_url,
+                _style(
+                    theme.PDF_FONT_SIZES["source"],
+                    color="#" + theme.COLOURS["link"],
+                ),
+            )
+        )
 
     rendered = BytesIO()
     document = SimpleDocTemplate(

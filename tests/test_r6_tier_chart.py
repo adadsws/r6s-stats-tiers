@@ -237,6 +237,54 @@ class GadgetIconTests(unittest.TestCase):
             self.assertTrue(icons["破片手榴弹"].is_file())
             self.assertEqual(len(calls), 1)
 
+    def test_impact_emp_uses_official_line_art_source(self):
+        image_bytes = io.BytesIO()
+        source = Image.new("RGBA", (16, 16), (0, 0, 0, 0))
+        source.putpixel((7, 7), (255, 255, 255, 255))
+        source.putpixel((8, 8), (255, 255, 255, 128))
+        source.save(image_bytes, format="PNG")
+        calls = []
+
+        def runner(command, **kwargs):
+            calls.append(command)
+            destination = Path(command[command.index("--output") + 1])
+            destination.write_bytes(image_bytes.getvalue())
+            return SimpleNamespace()
+
+        with tempfile.TemporaryDirectory() as directory:
+            icons = chart.prepare_gadget_icons(
+                (chart.GadgetItem("电磁脉冲式冲击弹", 2),),
+                Path(directory),
+                query_json=lambda _: self.fail(
+                    "Impact EMP should use the Ubisoft source"
+                ),
+                run_command=runner,
+                which=lambda _: "C:/curl.exe",
+                sleep=lambda _: None,
+            )
+
+            self.assertEqual(
+                calls[0][-1],
+                (
+                    "https://staticctf.ubisoft.com/"
+                    "J3yJr34U2pZ2Ieem48Dwy9uqj5PNUQTn/"
+                    "7izurbA5jDmnsmdeBdgKZO/"
+                    "29bca81243dda4084a92521ac0c03592/"
+                    "R6S-EMP-Impact-grenade.png"
+                ),
+            )
+            with Image.open(icons["电磁脉冲式冲击弹"]) as icon:
+                visible = [
+                    pixel
+                    for pixel in icon.convert("RGBA").get_flattened_data()
+                    if pixel[3] > 0
+                ]
+
+        self.assertTrue(visible)
+        self.assertTrue(
+            all(pixel[:3] == (0, 0, 0) for pixel in visible)
+        )
+
     def test_rejects_unknown_gadget_and_retries_invalid_download_four_times(self):
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(chart.TierChartError, "未知次要装备.*未知装备"):
