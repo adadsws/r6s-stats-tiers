@@ -10,6 +10,7 @@ from PIL import Image
 from pypdf import PdfReader
 from reportlab.lib.pagesizes import A2
 from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
 
 import _path_setup
 from r6_report import leaderboards as lb
@@ -789,6 +790,41 @@ class LeaderboardWorkbookTests(unittest.TestCase):
 
 
 class LeaderboardCliTests(unittest.TestCase):
+    def test_rasterizes_pdf_pages_without_changing_page_geometry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.pdf"
+            renderer = canvas.Canvas(str(source), pagesize=(144, 72))
+            renderer.setFillColorRGB(1, 0, 0)
+            renderer.rect(0, 0, 144, 72, fill=1, stroke=0)
+            renderer.showPage()
+            renderer.setPageSize((72, 144))
+            renderer.setFillColorRGB(0, 0, 1)
+            renderer.rect(0, 0, 72, 144, fill=1, stroke=0)
+            renderer.save()
+
+            paths = pdf_lb.write_pdf_pages_as_png(
+                source,
+                root / "图片版",
+                dpi=144,
+            )
+
+            self.assertEqual(
+                tuple(path.name for path in paths),
+                ("第1页.png", "第2页.png"),
+            )
+            with Image.open(paths[0]) as first, Image.open(paths[1]) as second:
+                self.assertEqual(first.size, (288, 144))
+                self.assertEqual(second.size, (144, 288))
+                self.assertEqual(
+                    first.convert("RGB").getpixel((144, 72)),
+                    (255, 0, 0),
+                )
+                self.assertEqual(
+                    second.convert("RGB").getpixel((72, 144)),
+                    (0, 0, 255),
+                )
+
     def test_pdf_gadget_image_preserves_aspect_ratio(self):
         with tempfile.TemporaryDirectory() as directory:
             icon = Path(directory) / "wide.png"
@@ -862,7 +898,7 @@ class LeaderboardCliTests(unittest.TestCase):
             "#" + theme.COLOURS["text"],
         )
 
-    def test_main_generates_five_workbooks_and_five_complete_pdfs(self):
+    def test_main_generates_workbooks_pdfs_and_unchanged_png_pages(self):
         attacker = make_card(
             "Attacker",
             1,
@@ -940,6 +976,10 @@ class LeaderboardCliTests(unittest.TestCase):
                     )
                 ),
             )
+            self.assertEqual(
+                len(tuple((output_dir / "图片版").glob("*/*.png"))),
+                15,
+            )
             for spec in lb.LEADERBOARD_SPECS.values():
                 path = output_dir / spec.filename
                 self.assertIn(str(path.resolve()), stdout.getvalue())
@@ -957,6 +997,12 @@ class LeaderboardCliTests(unittest.TestCase):
                 self.assertIn(str(pdf_path.resolve()), stdout.getvalue())
                 reader = PdfReader(pdf_path)
                 self.assertEqual(len(reader.pages), 3)
+                png_dir = output_dir / "图片版" / pdf_path.stem
+                png_paths = tuple(sorted(png_dir.glob("*.png")))
+                self.assertEqual(
+                    tuple(path.name for path in png_paths),
+                    ("第1页.png", "第2页.png", "第3页.png"),
+                )
                 page_heights = []
                 for page_number, page in enumerate(reader.pages, start=1):
                     self.assertAlmostEqual(
@@ -972,6 +1018,19 @@ class LeaderboardCliTests(unittest.TestCase):
                         "第 %d 页" % page_number,
                         page.extract_text() or "",
                     )
+                    with Image.open(png_paths[page_number - 1]) as rendered:
+                        expected_size = (
+                            float(page.mediabox.width) * 2,
+                            float(page.mediabox.height) * 2,
+                        )
+                        self.assertLessEqual(
+                            abs(rendered.width - expected_size[0]),
+                            1,
+                        )
+                        self.assertLessEqual(
+                            abs(rendered.height - expected_size[1]),
+                            1,
+                        )
                 self.assertGreater(
                     len({round(height, 1) for height in page_heights}),
                     1,

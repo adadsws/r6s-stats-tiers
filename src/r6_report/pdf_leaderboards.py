@@ -6,6 +6,7 @@ from typing import Iterable, Mapping, Tuple
 from xml.sax.saxutils import escape
 
 import pdfplumber
+import pypdfium2 as pdfium
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -41,6 +42,7 @@ PAGE_SIZE = A2
 PAGE_MARGIN = 10 * mm
 CONTENT_WIDTH = PAGE_SIZE[0] - 2 * PAGE_MARGIN
 MIN_PAGE_HEIGHT = 100 * mm
+PNG_DPI = 144
 
 
 def _register_fonts() -> None:
@@ -413,6 +415,47 @@ def _write_content_fitted_pdf(source: BytesIO, output: Path) -> None:
 
     with output.open("wb") as stream:
         writer.write(stream)
+
+
+def write_pdf_pages_as_png(
+    pdf_path: Path,
+    output_dir: Path,
+    *,
+    dpi: int = PNG_DPI,
+) -> Tuple[Path, ...]:
+    """Rasterize every PDF page as an unchanged, standalone PNG image."""
+    if dpi <= 0:
+        raise ValueError("dpi must be positive")
+
+    source = Path(pdf_path)
+    destination = Path(output_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    document = pdfium.PdfDocument(source)
+    paths = []
+    try:
+        for page_index in range(len(document)):
+            page = document[page_index]
+            bitmap = None
+            image = None
+            try:
+                bitmap = page.render(
+                    scale=dpi / 72,
+                    rotation=0,
+                    may_draw_forms=True,
+                )
+                image = bitmap.to_pil()
+                output = destination / ("第%d页.png" % (page_index + 1))
+                image.save(output, format="PNG", dpi=(dpi, dpi))
+                paths.append(output)
+            finally:
+                if image is not None:
+                    image.close()
+                if bitmap is not None:
+                    bitmap.close()
+                page.close()
+    finally:
+        document.close()
+    return tuple(paths)
 
 
 def write_leaderboard_pdf(

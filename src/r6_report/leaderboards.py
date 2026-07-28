@@ -428,7 +428,10 @@ def write_all_leaderboards(
         )
         paths.append(path)
         pdf_path = path.with_suffix(".pdf")
-        from .pdf_leaderboards import write_leaderboard_pdf
+        from .pdf_leaderboards import (
+            write_leaderboard_pdf,
+            write_pdf_pages_as_png,
+        )
         write_leaderboard_pdf(
             pdf_path,
             spec,
@@ -438,6 +441,12 @@ def write_all_leaderboards(
             report_sources,
         )
         paths.append(pdf_path)
+        paths.extend(
+            write_pdf_pages_as_png(
+                pdf_path,
+                destination / "图片版" / pdf_path.stem,
+            )
+        )
     return tuple(paths)
 
 
