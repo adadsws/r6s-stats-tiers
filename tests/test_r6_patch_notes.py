@@ -1,10 +1,12 @@
 import unittest
+from dataclasses import replace
 
 from openpyxl import Workbook
 
 import _path_setup
 from r6_report import patch_notes as notes
 from r6_report import report_theme as theme
+from r6_report.sources import PatchChange
 from r6_report.workbook_sources import append_source_footer
 from source_fixtures import make_report_sources
 
@@ -71,6 +73,45 @@ class PatchNotesTests(unittest.TestCase):
                 )
         self.assertIsNone(sheet.freeze_panes)
         self.assertIn("2026-07-25", sheet.cell(sheet.max_row, 1).value)
+
+    def test_retains_gadget_balance_change_in_patch_notes(self):
+        sources = make_report_sources()
+        patch = replace(
+            sources.patches[0],
+            changes=(
+                PatchChange(
+                    "增强",
+                    "Mute",
+                    "防弹摄像头电磁脉冲波的爆炸范围提升。",
+                ),
+            ),
+        )
+        sources = replace(sources, patches=(patch,))
+
+        sheet = notes.add_patch_notes_sheet(
+            Workbook(),
+            {"Mute": 70},
+            sources,
+        )
+
+        change_rows = [
+            tuple(sheet.cell(row, column).value for column in range(1, 7))
+            for row in range(1, sheet.max_row + 1)
+            if sheet.cell(row, 4).value == "Mute"
+        ]
+        self.assertEqual(
+            change_rows,
+            [
+                (
+                    "增强",
+                    "Y11S2.1",
+                    "2026-06-23",
+                    "Mute",
+                    "B / 70",
+                    "防弹摄像头电磁脉冲波的爆炸范围提升。",
+                ),
+            ],
+        )
 
     def test_rejects_missing_video_score(self):
         with self.assertRaisesRegex(notes.PatchNotesError, "missing video score"):

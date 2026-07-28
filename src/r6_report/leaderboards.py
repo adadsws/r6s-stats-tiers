@@ -1,6 +1,7 @@
 """Build five ordered R6 operator leaderboard workbooks."""
 
 import argparse
+import re
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -13,13 +14,18 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.properties import PageSetupProperties
 from PIL import Image as PillowImage
 
-from .gadget_slots import arrange_gadgets
+from .gadget_slots import GADGET_SLOT_NAMES, arrange_gadgets
 from .patch_notes import (
     PatchNotesError,
     add_patch_notes_sheet,
 )
 from . import report_theme as theme
-from .sources import ReportSources, SourceDataError, load_report_sources
+from .sources import (
+    PatchChange,
+    ReportSources,
+    SourceDataError,
+    load_report_sources,
+)
 from .tier_chart import (
     CARDS_PER_ROW,
     GadgetItem,
@@ -73,6 +79,29 @@ DEFENSE_GADGET_NAMES = {
     "冲击手榴弹": "冲击手榴弹",
 }
 PATCH_DIRECTIONS = {"增强", "削弱", "混合"}
+SECONDARY_GADGET_NAMES = frozenset(
+    name
+    for slot_names in GADGET_SLOT_NAMES.values()
+    for name in slot_names
+    if name is not None
+)
+_GADGET_EXPRESSION = "(?:%s)" % "|".join(
+    re.escape(name)
+    for name in sorted(SECONDARY_GADGET_NAMES, key=len, reverse=True)
+)
+_LOADOUT_CHANGE_PATTERNS = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r"新增\s*" + _GADGET_EXPRESSION,
+        r"移除\s*" + _GADGET_EXPRESSION,
+        _GADGET_EXPRESSION
+        + r"\s*(?:被)?替换为\s*"
+        + _GADGET_EXPRESSION,
+        r"改为\s*配备\s*" + _GADGET_EXPRESSION,
+        r"配备\s*" + _GADGET_EXPRESSION,
+    )
+)
+_PATCH_DETAIL_SEPARATOR = re.compile(r"[。；\r\n]+")
 
 
 class LeaderboardError(Exception):
@@ -143,10 +172,33 @@ def patch_direction_marker(directions: Iterable[str]) -> str:
     return "~"
 
 
+def counts_as_operator_adjustment(change: PatchChange) -> bool:
+    """判断补丁条目是否应计入干员增强或削弱标记。"""
+    detail = change.detail.strip()
+    if not any(name in detail for name in SECONDARY_GADGET_NAMES):
+        return True
+    if any(pattern.search(detail) for pattern in _LOADOUT_CHANGE_PATTERNS):
+        return True
+    first_clause = next(
+        (
+            clause.strip()
+            for clause in _PATCH_DETAIL_SEPARATOR.split(detail)
+            if clause.strip()
+        ),
+        "",
+    )
+    return not any(
+        name in first_clause
+        for name in SECONDARY_GADGET_NAMES
+    )
+
+
 def patch_markers(sources: ReportSources) -> Mapping[str, str]:
     directions: Dict[str, List[str]] = {}
     for patch in sources.patches:
         for change in patch.changes:
+            if not counts_as_operator_adjustment(change):
+                continue
             directions.setdefault(change.subject, []).append(change.direction)
     return {
         subject: patch_direction_marker(values)

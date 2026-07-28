@@ -2,6 +2,7 @@ import contextlib
 import io
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -15,6 +16,7 @@ from r6_report import leaderboards as lb
 from r6_report import pdf_leaderboards as pdf_lb
 from r6_report import report_theme as theme
 from r6_report import tier_chart as tier
+from r6_report.sources import PatchChange
 from source_fixtures import make_report_sources
 
 
@@ -169,6 +171,64 @@ class LeaderboardClassificationTests(unittest.TestCase):
             lb.patch_markers(make_report_sources(with_changes=True)),
             {"Alice": "~", "Bob": "-"},
         )
+
+    def test_excludes_only_pure_gadget_balance_from_operator_markers(self):
+        cases = (
+            (
+                PatchChange(
+                    "增强",
+                    "Mute",
+                    "防弹摄像头电磁脉冲波的爆炸范围提升。",
+                ),
+                False,
+            ),
+            (
+                PatchChange("增强", "Wamai", "新增机动护盾。"),
+                True,
+            ),
+            (
+                PatchChange(
+                    "混合",
+                    "Wamai",
+                    "冲击手榴弹被替换为遥控炸药。",
+                ),
+                True,
+            ),
+            (
+                PatchChange(
+                    "增强",
+                    "Wamai",
+                    "磁力销毁系统充能提高；新增机动护盾。",
+                ),
+                True,
+            ),
+            (
+                PatchChange("削弱", "Ace", "技能持续时间缩短。"),
+                True,
+            ),
+        )
+        for change, expected in cases:
+            with self.subTest(detail=change.detail):
+                self.assertEqual(
+                    lb.counts_as_operator_adjustment(change),
+                    expected,
+                )
+
+        sources = make_report_sources()
+        patch = replace(
+            sources.patches[0],
+            changes=(
+                PatchChange(
+                    "增强",
+                    "Mute",
+                    "防弹摄像头电磁脉冲波的爆炸范围提升。",
+                ),
+                PatchChange("削弱", "Ace", "技能持续时间缩短。"),
+            ),
+        )
+        sources = replace(sources, patches=(patch,))
+
+        self.assertEqual(lb.patch_markers(sources), {"Ace": "-"})
 
 
 class LeaderboardSortingTests(unittest.TestCase):
