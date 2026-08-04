@@ -83,6 +83,9 @@ class HuijiClient:
     def prepare_gadget_icons(self, items, directory: Path):
         return tier_chart.prepare_gadget_icons(items, directory)
 
+    def prepare_weapon_icons(self, items, directory: Path):
+        return tier_chart.prepare_weapon_icons(items, directory)
+
     def _request_json(self, parameters: Mapping[str, str]) -> Mapping[str, object]:
         curl_path = self._which("curl.exe") or self._which("curl")
         if not curl_path:

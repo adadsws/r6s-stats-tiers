@@ -18,8 +18,8 @@ if errorlevel 1 (
     set "PYTHON_CMD=python"
 )
 
-if not exist "%~dp0data\athieno\latest.json" (
-    echo [错误] 缺少 data\athieno\latest.json。
+if not exist "%~dp0inputs\athieno\latest.json" (
+    echo [错误] 缺少 inputs\athieno\latest.json。
     echo 请先使用项目 Skill 人工核对 Athieno 最新 Tier 视频并保存评分。
     pause
     exit /b 1
@@ -28,19 +28,19 @@ if not exist "%~dp0data\athieno\latest.json" (
 set "PYTHONPATH=%~dp0src"
 
 echo [1/3] 获取灰机 Wiki 最新数据、图标和补丁...
-%PYTHON_CMD% -m r6_report.collector --data-dir "%~dp0data" --archive-dir "%~dp0~archived\data-snapshots" --temp-dir "%~dp0~temp"
+%PYTHON_CMD% -m r6_report.collector --inputs-dir "%~dp0inputs" --archive-dir "%~dp0~archive\data-snapshots" --temp-dir "%~dp0~temp"
 if errorlevel 1 goto :failed
 
 echo [2/3] 生成基础统计工作簿...
-%PYTHON_CMD% -m r6_report.operator_stats --data-dir "%~dp0data" --output "%~dp0data\r6_operator_stats.xlsx"
+%PYTHON_CMD% -m r6_report.operator_stats --inputs-dir "%~dp0inputs" --output "%~dp0~temp\r6_operator_stats.xlsx"
 if errorlevel 1 goto :failed
 
 echo [3/3] 生成五个中文榜单...
-%PYTHON_CMD% -m r6_report.leaderboards --data-dir "%~dp0data" --input "%~dp0data\r6_operator_stats.xlsx" --output-dir "%~dp0output"
+%PYTHON_CMD% -m r6_report.leaderboards --inputs-dir "%~dp0inputs" --input "%~dp0~temp\r6_operator_stats.xlsx" --output-dir "%~dp0~outputs"
 if errorlevel 1 goto :failed
 
 echo.
-echo 完成。榜单位于：%~dp0output
+echo 完成。榜单位于：%~dp0~outputs
 pause
 exit /b 0
 

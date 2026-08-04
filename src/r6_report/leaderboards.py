@@ -30,6 +30,7 @@ from .tier_chart import (
     CARDS_PER_ROW,
     GadgetItem,
     OperatorCard,
+    WeaponItem,
     SOURCE_SHEETS,
     TierChartError,
     _add_offset_image,
@@ -284,6 +285,19 @@ def best_dimension_rank(
     return min(order.index(item) for item in memberships)
 
 
+def _self_metric_sort_key(
+    card: OperatorCard,
+    dimension: str,
+) -> Tuple[int, ...]:
+    if dimension == "video":
+        return (-card.score,)
+    if dimension == "primary_rpm":
+        return (-max(card.primary_rpms, default=-1),)
+    if dimension == "speed":
+        return (-card.speed,)
+    return ()
+
+
 def sort_cards_for_band(
     cards: Iterable[OperatorCard],
     current_dimension: str,
@@ -297,7 +311,7 @@ def sort_cards_for_band(
     )
 
     def sort_key(card: OperatorCard):
-        return tuple(
+        return _self_metric_sort_key(card, current_dimension) + tuple(
             best_dimension_rank(card, dimension, side)
             for dimension in dimensions
         ) + (card.source_order,)
@@ -345,6 +359,7 @@ def write_leaderboard_workbook(
     cards: Mapping[str, Iterable[OperatorCard]],
     operator_icon_dir: Path,
     gadget_icons: Mapping[str, Path],
+    weapon_icons: Mapping[str, Path],
     report_sources: ReportSources,
 ) -> None:
     output_path = Path(path)
@@ -380,15 +395,16 @@ def write_leaderboard_workbook(
                 groups,
                 badge_dir,
                 token_paths,
+                weapon_icons,
                 markers,
             )
             _, footer_end = append_source_footer(
                 sheet,
-                1 + CARDS_PER_ROW * 6,
+                1 + CARDS_PER_ROW * 8,
                 report_sources,
             )
             sheet.print_area = "A1:%s%d" % (
-                get_column_letter(1 + CARDS_PER_ROW * 6),
+                get_column_letter(1 + CARDS_PER_ROW * 8),
                 footer_end,
             )
 
@@ -411,6 +427,7 @@ def write_all_leaderboards(
     cards: Mapping[str, Iterable[OperatorCard]],
     operator_icon_dir: Path,
     gadget_icons: Mapping[str, Path],
+    weapon_icons: Mapping[str, Path],
     report_sources: ReportSources,
 ) -> Tuple[Path, ...]:
     destination = Path(output_dir)
@@ -424,6 +441,7 @@ def write_all_leaderboards(
             cards,
             operator_icon_dir,
             gadget_icons,
+            weapon_icons,
             report_sources,
         )
         paths.append(path)
@@ -438,6 +456,7 @@ def write_all_leaderboards(
             cards,
             operator_icon_dir,
             gadget_icons,
+            weapon_icons,
             report_sources,
         )
         paths.append(pdf_path)
@@ -525,9 +544,10 @@ def _render_side_sheet(
     groups: Mapping[str, Tuple[OperatorCard, ...]],
     badge_dir: Path,
     token_paths: Mapping[Tuple[str, Optional[int]], Path],
+    weapon_icons: Mapping[str, Path],
     markers: Mapping[str, str],
 ) -> None:
-    columns_per_card = 6
+    columns_per_card = 8
     last_column = 1 + CARDS_PER_ROW * columns_per_card
     last_column_letter = get_column_letter(last_column)
     sheet.merge_cells(
@@ -552,13 +572,28 @@ def _render_side_sheet(
     for slot in range(CARDS_PER_ROW):
         badge_column = 2 + slot * columns_per_card
         sheet.column_dimensions[get_column_letter(badge_column)].width = 6.5
-        for column in range(badge_column + 1, badge_column + 5):
-            sheet.column_dimensions[get_column_letter(column)].width = 6.8
+        detail_width = 4 * 6.8 / 6
+        detail_widths = (
+            detail_width * 0.75,
+            detail_width * 0.75,
+            detail_width * 1.5,
+            detail_width,
+            detail_width,
+            detail_width,
+        )
+        for offset, width in enumerate(detail_widths, start=1):
+            sheet.column_dimensions[
+                get_column_letter(badge_column + offset)
+            ].width = width
         sheet.column_dimensions[
-            get_column_letter(badge_column + 5)
+            get_column_letter(badge_column + 7)
         ].width = 2.5
 
-    thin_gray = Side(style="thin", color=theme.COLOURS["border"])
+    thin_gray = Side(style="thin", color=theme.COLOURS["card_grid"])
+    strong_gray = Side(
+        style="medium",
+        color=theme.COLOURS["card_divider"],
+    )
     card_border = Border(
         left=thin_gray,
         right=thin_gray,
@@ -583,112 +618,160 @@ def _render_side_sheet(
         band_start_row = current_row
 
         for chunk in chunks:
-            name_row = current_row
-            feature_row = current_row + 1
-            rpm_row = current_row + 2
-            gadget_row = current_row + 3
-            sheet.row_dimensions[name_row].height = 18
-            sheet.row_dimensions[
-                feature_row
-            ].height = theme.XLSX_CARD_BODY_ROW_PT
-            sheet.row_dimensions[
-                rpm_row
-            ].height = theme.XLSX_CARD_BODY_ROW_PT
-            sheet.row_dimensions[gadget_row].height = (
-                2 * theme.XLSX_CARD_BODY_ROW_PT
-            )
+            top_row = current_row
+            weapon_rows = tuple(current_row + offset for offset in (1, 2, 3))
+            gadget_row = current_row + 4
+            sheet.row_dimensions[top_row].height = 18
+            for row in (*weapon_rows, gadget_row):
+                sheet.row_dimensions[row].height = theme.XLSX_CARD_BODY_ROW_PT
 
             for slot in range(CARDS_PER_ROW):
                 badge_column = 2 + slot * columns_per_card
                 first_info = badge_column + 1
-                second_info = badge_column + 2
-                third_info = badge_column + 3
-                fourth_info = badge_column + 4
-                for row in (
-                    name_row,
-                    feature_row,
-                    rpm_row,
-                    gadget_row,
-                ):
-                    for column in range(badge_column, fourth_info + 1):
+                secondary_column = badge_column + 4
+                speed_column = secondary_column - 1
+                last_info = badge_column + 6
+                for row in (top_row, *weapon_rows, gadget_row):
+                    for column in range(badge_column, last_info + 1):
                         cell = sheet.cell(row, column)
                         cell.fill = card_fill
-                        cell.border = card_border
+                        is_detail_row = row != gadget_row
+                        cell.border = Border(
+                            left=(
+                                strong_gray
+                                if column == badge_column
+                                or (
+                                    is_detail_row
+                                    and column in (first_info, secondary_column)
+                                )
+                                else thin_gray
+                            ),
+                            right=(
+                                strong_gray
+                                if column == last_info
+                                or (
+                                    is_detail_row
+                                    and (
+                                        column
+                                        in (
+                                            badge_column,
+                                            secondary_column - 1,
+                                            secondary_column,
+                                        )
+                                        or (
+                                            column == first_info
+                                            and row != top_row
+                                        )
+                                    )
+                                )
+                                else thin_gray
+                            ),
+                            top=(
+                                strong_gray
+                                if row in (top_row, gadget_row)
+                                else thin_gray
+                            ),
+                            bottom=(
+                                strong_gray
+                                if row in (weapon_rows[-1], gadget_row)
+                                or (row == top_row and column == badge_column)
+                                or (
+                                    row == weapon_rows[0]
+                                    and column >= secondary_column
+                                )
+                                else thin_gray
+                            ),
+                        )
 
                 sheet.merge_cells(
-                    start_row=name_row,
+                    start_row=top_row,
                     start_column=badge_column,
-                    end_row=rpm_row,
+                    end_row=weapon_rows[-1],
                     end_column=badge_column,
                 )
                 sheet.merge_cells(
-                    start_row=name_row,
+                    start_row=top_row,
                     start_column=first_info,
-                    end_row=name_row,
-                    end_column=second_info,
+                    end_row=top_row,
+                    end_column=speed_column - 1,
                 )
-                for row in (feature_row, rpm_row):
+                sheet.merge_cells(
+                    start_row=top_row,
+                    start_column=secondary_column,
+                    end_row=top_row,
+                    end_column=last_info,
+                )
+                for row in weapon_rows:
                     sheet.merge_cells(
                         start_row=row,
                         start_column=first_info,
                         end_row=row,
-                        end_column=second_info,
+                        end_column=secondary_column - 1,
                     )
                     sheet.merge_cells(
                         start_row=row,
-                        start_column=third_info,
+                        start_column=secondary_column,
                         end_row=row,
-                        end_column=fourth_info,
+                        end_column=last_info,
                     )
-                sheet.merge_cells(
-                    start_row=gadget_row,
-                    start_column=badge_column,
-                    end_row=gadget_row,
-                    end_column=fourth_info,
-                )
                 if slot >= len(chunk):
                     continue
 
                 card = chunk[slot]
-                name_cell = sheet.cell(name_row, first_info, card.name)
                 tier_cell = sheet.cell(
-                    name_row,
-                    third_info,
+                    top_row,
+                    first_info,
                     card.tier + markers.get(card.name, ""),
                 )
                 speed_cell = sheet.cell(
-                    name_row,
-                    fourth_info,
+                    top_row,
+                    speed_column,
                     "%d速" % card.speed,
                 )
-                secondary_shotgun_cell = sheet.cell(
-                    feature_row,
-                    first_info,
-                    theme.feature_text("副喷", card.has_secondary_shotgun),
-                )
                 primary_sniper_cell = sheet.cell(
-                    feature_row,
-                    third_info,
+                    top_row,
+                    secondary_column,
                     theme.feature_text("主狙", card.has_semiautomatic),
                 )
-                secondary_rpm_cell = sheet.cell(
-                    rpm_row,
-                    first_info,
-                    theme.rpm_text("副", card.secondary_rpms),
+                secondary_shotgun_cell = sheet.cell(
+                    weapon_rows[0],
+                    secondary_column,
+                    theme.feature_text("副喷", card.has_secondary_shotgun),
                 )
-                primary_rpm_cell = sheet.cell(
-                    rpm_row,
-                    third_info,
-                    theme.rpm_text("主", card.primary_rpms),
-                )
+                primary_rpm_cells = [
+                    sheet.cell(
+                        row,
+                        first_info,
+                        theme.rpm_text(
+                            "主",
+                            (weapon.firerate,)
+                            if weapon.firerate is not None else (),
+                        ),
+                    )
+                    for row, weapon in zip(weapon_rows, card.primary_weapons[:3])
+                ]
+                secondary_rpm_cells = [
+                    sheet.cell(
+                        row,
+                        secondary_column,
+                        theme.rpm_text(
+                            "副",
+                            (weapon.firerate,)
+                            if weapon.firerate is not None else (),
+                        ),
+                    )
+                    for row, weapon in zip(
+                        weapon_rows[1:],
+                        card.secondary_weapons[:2],
+                    )
+                ]
 
                 for cell in (
-                    name_cell,
                     speed_cell,
-                    secondary_shotgun_cell,
                     primary_sniper_cell,
-                    secondary_rpm_cell,
-                    primary_rpm_cell,
+                    secondary_shotgun_cell,
+                    *primary_rpm_cells,
+                    *secondary_rpm_cells,
                 ):
                     cell.font = normal_font
                     cell.alignment = Alignment(
@@ -698,10 +781,9 @@ def _render_side_sheet(
                     )
                     if theme.is_missing_field(cell.value):
                         cell.fill = missing_fill
-                name_cell.font = Font(
-                    name=theme.FONT_FAMILY,
-                    size=theme.XLSX_FONT_SIZES["name"],
-                    color=theme.COLOURS["text"],
+                speed_cell.alignment = Alignment(
+                    horizontal="center",
+                    vertical="center",
                 )
                 tier_cell.font = Font(
                     name="Arial",
@@ -721,11 +803,20 @@ def _render_side_sheet(
                     horizontal="center",
                     vertical="center",
                 )
-                speed_cell.alignment = Alignment(
-                    horizontal="center",
-                    vertical="center",
-                )
 
+                badge_cell = sheet.cell(top_row, badge_column, card.name)
+                badge_cell.font = Font(
+                    name=theme.FONT_FAMILY,
+                    size=theme.XLSX_FONT_SIZES["page"],
+                    bold=True,
+                    color=theme.COLOURS["text_strong"],
+                )
+                badge_cell.alignment = Alignment(
+                    horizontal="center",
+                    vertical="bottom",
+                    shrink_to_fit=True,
+                    wrap_text=False,
+                )
                 badge = _excel_image(
                     badge_dir / (operator_key(card.name) + ".png")
                 )
@@ -733,36 +824,64 @@ def _render_side_sheet(
                     sheet,
                     badge,
                     badge_column,
-                    name_row,
+                    top_row,
                     48,
                     48,
                     4,
-                    2,
+                    22,
                 )
+                _add_weapon_icons_to_xlsx(
+                    sheet,
+                    top_row,
+                    secondary_column,
+                    card.semiautomatic_weapons,
+                    weapon_icons,
+                )
+                _add_weapon_icons_to_xlsx(
+                    sheet,
+                    weapon_rows[0],
+                    secondary_column,
+                    card.secondary_shotguns,
+                    weapon_icons,
+                )
+                for row, weapon in zip(weapon_rows, card.primary_weapons[:3]):
+                    _add_weapon_icons_to_xlsx(
+                        sheet,
+                        row,
+                        first_info,
+                        (weapon,),
+                        weapon_icons,
+                    )
+                for row, weapon in zip(
+                    weapon_rows[1:],
+                    card.secondary_weapons[:2],
+                ):
+                    _add_weapon_icons_to_xlsx(
+                        sheet,
+                        row,
+                        secondary_column,
+                        (weapon,),
+                        weapon_icons,
+                    )
                 for gadget_slot, gadget in enumerate(
                     arrange_gadgets(card.side, card.gadgets)
                 ):
                     if gadget is None:
                         continue
-                    gadget_column = (
-                        gadget_slot % theme.GADGETS_PER_LINE
-                    )
-                    gadget_line = gadget_slot // theme.GADGETS_PER_LINE
                     token = _excel_image(
                         token_paths[(gadget.name, gadget.quantity)]
                     )
                     _add_offset_image(
                         sheet,
                         token,
-                        first_info + gadget_column,
+                        badge_column + gadget_slot,
                         gadget_row,
                         theme.XLSX_GADGET_TOKEN_PX[0],
                         theme.XLSX_GADGET_TOKEN_PX[1],
-                        theme.XLSX_GADGET_COLUMN_OFFSET_PX,
-                        gadget_line
-                        * theme.XLSX_GADGET_TOKEN_PX[1],
+                        13 if gadget_slot == 0 else 6,
+                        0,
                     )
-            current_row += 4
+            current_row += 5
 
         band_end_row = current_row - 1
         sheet.merge_cells(
@@ -807,6 +926,53 @@ def _render_side_sheet(
         last_column_letter,
         current_row - 1,
     )
+
+
+def _add_weapon_icons_to_xlsx(
+    sheet,
+    row: int,
+    column: int,
+    items: Tuple[WeaponItem, ...],
+    weapon_icons: Mapping[str, Path],
+    *,
+    x_offset_px: int = theme.XLSX_WEAPON_ICON_X_OFFSET_PX,
+    icon_area_px: int = theme.XLSX_WEAPON_ICON_AREA_PX,
+) -> None:
+    if not items:
+        return
+    gap = theme.XLSX_WEAPON_ICON_GAP_PX
+    slot_width = max(
+        1,
+        (
+            icon_area_px
+            - gap * (len(items) - 1)
+        )
+        // len(items),
+    )
+    x_offset = x_offset_px
+    row_height_px = round(theme.XLSX_CARD_BODY_ROW_PT * 96 / 72)
+    for item in items:
+        source = weapon_icons.get(item.icon_key)
+        if source is None:
+            raise LeaderboardError("找不到枪械图标：%s" % item.name)
+        with PillowImage.open(source) as image:
+            scale = min(
+                slot_width / image.width,
+                theme.XLSX_WEAPON_ICON_HEIGHT_PX / image.height,
+            )
+            width = max(1, round(image.width * scale))
+            height = max(1, round(image.height * scale))
+        _add_offset_image(
+            sheet,
+            _excel_image(source),
+            column,
+            row,
+            width,
+            height,
+            x_offset + (slot_width - width) // 2,
+            (row_height_px - height) // 2,
+        )
+        x_offset += slot_width + gap
 
 def _band_color(dimension: str, band: str, side: str) -> str:
     if dimension == "video":
@@ -872,6 +1038,42 @@ def load_gadget_icons(
     return paths
 
 
+def load_weapon_icons(
+    items: Iterable[WeaponItem],
+    directory: Path,
+) -> Mapping[str, Path]:
+    root = Path(directory).resolve()
+    paths = {}
+    for item in items:
+        if item.icon_key in paths:
+            continue
+        path = root / (item.icon_key + ".png")
+        if not path.is_file() or not _is_valid_image(path):
+            raise LeaderboardError(
+                "找不到已采集的枪械图标：%s (%s)"
+                % (item.name, path)
+            )
+        paths[item.icon_key] = path
+    return paths
+
+
+def card_weapon_items(
+    cards: Mapping[str, Iterable[OperatorCard]],
+) -> Tuple[WeaponItem, ...]:
+    return tuple(
+        weapon
+        for side in SOURCE_SHEETS
+        for card in cards[side]
+        for group in (
+            card.primary_weapons,
+            card.secondary_weapons,
+            card.semiautomatic_weapons,
+            card.secondary_shotguns,
+        )
+        for weapon in group
+    )
+
+
 def main(
     argv: Optional[List[str]] = None,
     *,
@@ -881,15 +1083,18 @@ def main(
     gadget_icon_preparer: Callable[
         [Iterable[GadgetItem], Path], Mapping[str, Path]
     ] = None,
+    weapon_icon_loader: Callable[
+        [Iterable[WeaponItem], Path], Mapping[str, Path]
+    ] = load_weapon_icons,
     source_loader: Callable[[Path], ReportSources] = load_report_sources,
 ) -> int:
     parser = argparse.ArgumentParser(
         description="从 R6 干员统计工作簿生成五个榜单工作簿"
     )
     parser.add_argument(
-        "--data-dir",
+        "--inputs-dir",
         type=Path,
-        default=Path("data"),
+        default=Path("inputs"),
     )
     parser.add_argument(
         "--input",
@@ -899,7 +1104,7 @@ def main(
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("output"),
+        default=Path("~outputs"),
     )
     parser.add_argument(
         "--icons-dir",
@@ -911,20 +1116,29 @@ def main(
         type=Path,
         default=None,
     )
+    parser.add_argument(
+        "--weapon-icons-dir",
+        type=Path,
+        default=None,
+    )
     arguments = parser.parse_args(argv)
 
     try:
         input_path = (
             arguments.input
-            or arguments.data_dir / "r6_operator_stats.xlsx"
+            or Path("~temp") / "r6_operator_stats.xlsx"
         )
         operator_icon_dir = (
             arguments.icons_dir
-            or arguments.data_dir / "icons" / "operator" / "badge"
+            or arguments.inputs_dir / "icons" / "operator" / "badge"
         )
         gadget_icon_dir = (
             arguments.gadget_icons_dir
-            or arguments.data_dir / "icons" / "gadget"
+            or arguments.inputs_dir / "icons" / "gadget"
+        )
+        weapon_icon_dir = (
+            arguments.weapon_icons_dir
+            or arguments.inputs_dir / "icons" / "weapon"
         )
         if not input_path.is_file():
             raise LeaderboardError(
@@ -942,12 +1156,17 @@ def main(
             if gadget_icon_preparer is not None
             else load_gadget_icons(gadget_items, gadget_icon_dir)
         )
-        report_sources = source_loader(arguments.data_dir)
+        weapon_icons = weapon_icon_loader(
+            card_weapon_items(cards),
+            weapon_icon_dir,
+        )
+        report_sources = source_loader(arguments.inputs_dir)
         output_paths = write_all_leaderboards(
             arguments.output_dir,
             cards,
             operator_icon_dir,
             gadget_icons,
+            weapon_icons,
             report_sources,
         )
     except (

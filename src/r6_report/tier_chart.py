@@ -26,6 +26,7 @@ from openpyxl.utils.units import pixels_to_EMU
 from PIL import Image as PillowImage
 from PIL import ImageDraw, ImageFont
 
+from . import report_theme as theme
 from .patch_notes import (
     PatchNotesError,
     add_patch_notes_sheet,
@@ -94,6 +95,13 @@ class TierChartError(Exception):
 
 
 @dataclass(frozen=True)
+class WeaponItem:
+    name: str
+    icon_key: str
+    firerate: Optional[int] = None
+
+
+@dataclass(frozen=True)
 class GadgetItem:
     name: str
     quantity: Optional[int]
@@ -112,22 +120,52 @@ class OperatorCard:
     has_secondary_shotgun: bool
     gadgets: Tuple[GadgetItem, ...]
     source_order: int
+    primary_weapons: Tuple[WeaponItem, ...] = ()
+    secondary_weapons: Tuple[WeaponItem, ...] = ()
+    semiautomatic_weapons: Tuple[WeaponItem, ...] = ()
+    secondary_shotguns: Tuple[WeaponItem, ...] = ()
 
 
 def extract_rpms(value: object) -> Tuple[int, ...]:
+    return tuple(
+        item.firerate
+        for item in parse_automatic_weapons(value)
+        if item.firerate is not None
+    )
+
+
+def weapon_icon_key(name: str) -> str:
+    normalized = unicodedata.normalize("NFKC", name).casefold()
+    normalized = normalized.replace("p10 roni转换套件衍生型", "p10 roni")
+    return re.sub(r"[^\w]+", "-", normalized).strip("-")
+
+
+def parse_automatic_weapons(value: object) -> Tuple[WeaponItem, ...]:
     text = _required_text(value, "自动枪械")
     if text == "无自动枪械":
         return ()
-    matches = RPM_PATTERN.findall(text)
-    if not matches:
-        raise TierChartError(f"无法提取射速：{text}")
-    rates = []
-    for match in matches:
-        rate = float(match)
+    items = []
+    for raw_item in text.splitlines():
+        match = re.fullmatch(r"(.+?)（([0-9]+(?:\.[0-9]+)?)）", raw_item.strip())
+        if not match:
+            raise TierChartError(f"无法提取射速：{raw_item}")
+        name, raw_rate = match.groups()
+        rate = float(raw_rate)
         if not rate.is_integer():
-            raise TierChartError(f"射速必须是整数：{match}")
-        rates.append(int(rate))
-    return tuple(rates)
+            raise TierChartError(f"射速必须是整数：{raw_rate}")
+        items.append(WeaponItem(name, weapon_icon_key(name), int(rate)))
+    return tuple(items)
+
+
+def parse_named_weapons(value: object) -> Tuple[WeaponItem, ...]:
+    text = _required_text(value, "武器状态")
+    if text == "无":
+        return ()
+    return tuple(
+        WeaponItem(name, weapon_icon_key(name))
+        for name in (line.strip() for line in text.splitlines())
+        if name
+    )
 
 
 def parse_gadgets(value: object) -> Tuple[GadgetItem, ...]:
@@ -201,6 +239,19 @@ def load_operator_cards(path: Path) -> Dict[str, List[OperatorCard]]:
                 if score not in SCORE_TIERS:
                     raise TierChartError(f"未知评分：{name} = {score}")
 
+                primary_weapons = parse_automatic_weapons(
+                    values[columns["主手自动枪械（射速，发/分钟）"]]
+                )
+                secondary_weapons = parse_automatic_weapons(
+                    values[columns["副手自动枪械（射速，发/分钟）"]]
+                )
+                semiautomatic_weapons = parse_named_weapons(
+                    values[columns["主狙"]]
+                )
+                secondary_shotguns = parse_named_weapons(
+                    values[columns["副手霰弹"]]
+                )
+
                 cards[side].append(
                     OperatorCard(
                         side=side,
@@ -208,18 +259,20 @@ def load_operator_cards(path: Path) -> Dict[str, List[OperatorCard]]:
                         speed=speed,
                         score=score,
                         tier=SCORE_TIERS[score],
-                        primary_rpms=extract_rpms(
-                            values[columns["主手自动枪械（射速，发/分钟）"]]
+                        primary_rpms=tuple(
+                            item.firerate for item in primary_weapons
                         ),
-                        secondary_rpms=extract_rpms(
-                            values[columns["副手自动枪械（射速，发/分钟）"]]
+                        secondary_rpms=tuple(
+                            item.firerate for item in secondary_weapons
                         ),
-                        has_semiautomatic=_has_value(
-                            values[columns["主狙"]]
-                        ),
-                        has_secondary_shotgun=_has_value(values[columns["副手霰弹"]]),
+                        has_semiautomatic=bool(semiautomatic_weapons),
+                        has_secondary_shotgun=bool(secondary_shotguns),
                         gadgets=parse_gadgets(values[columns["次要装备"]]),
                         source_order=source_order,
+                        primary_weapons=primary_weapons,
+                        secondary_weapons=secondary_weapons,
+                        semiautomatic_weapons=semiautomatic_weapons,
+                        secondary_shotguns=secondary_shotguns,
                     )
                 )
                 source_order += 1
@@ -352,6 +405,100 @@ def prepare_gadget_icons(
                     sleep(float(attempt))
         else:
             raise TierChartError(f"下载 {name} 图标经过 4 次尝试仍失败：{last_error}")
+    return destinations
+
+
+def prepare_weapon_icons(
+    items: Iterable[WeaponItem],
+    directory: Path,
+    *,
+    query_json: Optional[
+        Callable[[Mapping[str, str]], Mapping[str, object]]
+    ] = None,
+    run_command: Callable[..., object] = subprocess.run,
+    which: Callable[[str], Optional[str]] = shutil.which,
+    sleep: Callable[[float], None] = time.sleep,
+) -> Dict[str, Path]:
+    unique = {}
+    for item in items:
+        unique.setdefault(item.icon_key, item)
+
+    icon_dir = Path(directory)
+    icon_dir.mkdir(parents=True, exist_ok=True)
+    destinations = {
+        key: icon_dir / (key + ".png")
+        for key in unique
+    }
+    missing = []
+    for key, destination in destinations.items():
+        if destination.is_file() and _is_valid_image(destination):
+            continue
+        destination.unlink(missing_ok=True)
+        missing.append((unique[key], destination))
+    if not missing:
+        return destinations
+
+    curl_path = which("curl.exe") or which("curl")
+    if not curl_path:
+        raise TierChartError("未找到 curl.exe 或 curl，请先安装并加入 PATH")
+
+    for item, destination in missing:
+        file_title = "文件:R6S wpn %s.png" % item.name
+        url = resolve_wiki_file_url(file_title, query_json)
+        last_error = "未知下载错误"
+        for attempt in range(1, 5):
+            temporary = destination.with_suffix(".download")
+            temporary.unlink(missing_ok=True)
+            try:
+                run_command(
+                    [
+                        curl_path,
+                        "--location",
+                        "--silent",
+                        "--show-error",
+                        "--fail",
+                        "--max-time",
+                        "30",
+                        "--user-agent",
+                        "r6-tier-chart/1.0",
+                        "--output",
+                        str(temporary),
+                        url,
+                    ],
+                    check=True,
+                )
+                if not _is_valid_image(temporary):
+                    raise ValueError("下载内容不是有效图片")
+                with PillowImage.open(temporary) as image:
+                    source = image.convert("RGBA")
+                    bounds = source.getchannel("A").getbbox()
+                    if bounds is None:
+                        raise ValueError("枪械图标没有可见像素")
+                    source = source.crop(bounds)
+                    color = bytes.fromhex(theme.COLOURS["text"])
+                    silhouette = PillowImage.new(
+                        "RGBA",
+                        source.size,
+                        (color[0], color[1], color[2], 0),
+                    )
+                    silhouette.putalpha(source.getchannel("A"))
+                    silhouette.save(temporary, format="PNG")
+                temporary.replace(destination)
+                break
+            except (
+                OSError,
+                subprocess.CalledProcessError,
+                ValueError,
+            ) as exc:
+                last_error = str(exc)
+                temporary.unlink(missing_ok=True)
+                if attempt < 4:
+                    sleep(float(attempt))
+        else:
+            raise TierChartError(
+                "下载 %s 图标经过 4 次尝试仍失败：%s"
+                % (item.name, last_error)
+            )
     return destinations
 
 
@@ -649,9 +796,13 @@ def main(
     parser = argparse.ArgumentParser(
         description="从 R6 干员统计工作簿生成横向评分阶层简图"
     )
-    parser.add_argument("--data-dir", type=Path, default=Path("data"))
+    parser.add_argument("--inputs-dir", type=Path, default=Path("inputs"))
     parser.add_argument("--input", type=Path, default=None)
-    parser.add_argument("--output", type=Path, default=Path("output/视频评分简图.xlsx"))
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("~outputs/视频评分简图.xlsx"),
+    )
     parser.add_argument(
         "--icons-dir", type=Path, default=None
     )
@@ -661,14 +812,14 @@ def main(
     arguments = parser.parse_args(argv)
 
     try:
-        input_path = arguments.input or arguments.data_dir / "r6_operator_stats.xlsx"
+        input_path = arguments.input or Path("~temp") / "r6_operator_stats.xlsx"
         icon_dir = (
             arguments.icons_dir
-            or arguments.data_dir / "icons" / "operator" / "badge"
+            or arguments.inputs_dir / "icons" / "operator" / "badge"
         )
         gadget_dir = (
             arguments.gadget_icons_dir
-            or arguments.data_dir / "icons" / "gadget"
+            or arguments.inputs_dir / "icons" / "gadget"
         )
         cards = load_operator_cards(input_path)
         for side in SOURCE_SHEETS:
@@ -686,7 +837,7 @@ def main(
             for gadget in card.gadgets
         )
         gadget_icons = gadget_icon_preparer(gadget_items, gadget_dir)
-        report_sources = source_loader(arguments.data_dir)
+        report_sources = source_loader(arguments.inputs_dir)
         write_tier_workbook(
             arguments.output,
             cards,

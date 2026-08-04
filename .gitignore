@@ -1,2 +1,10 @@
+# 可随时重建的缓存、日志和中间产物。
 /~temp/
-/output/
+# 需要本地检查、复用或交付但不进入 Git 的生成结果。
+/~outputs/
+# 本地固定副本和 Python 虚拟环境。
+/.worktrees/
+/.venv/
+# Python 在源码或测试相邻位置生成的解释器缓存。
+__pycache__/
+*.py[cod]

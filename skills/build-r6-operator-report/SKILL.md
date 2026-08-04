@@ -1,12 +1,12 @@
 ---
 name: build-r6-operator-report
-description: Use when finding Athieno's latest complete Rainbow Six Siege operator Tier List video, manually verifying its final ranking frame, and updating this project's data/athieno/latest.json rating source.
+description: Use when finding Athieno's latest complete Rainbow Six Siege operator Tier List video, manually verifying its final ranking frame, and updating this project's inputs/athieno/latest.json rating source.
 ---
 
 # 更新 Athieno 干员 Tier
 
 只从 Athieno 官方最新完整 Tier List 视频获取评分数据，并更新
-`data/athieno/latest.json`。不要执行项目中的其他采集、生成或验证任务。
+`inputs/athieno/latest.json`。不要执行项目中的其他采集、生成或验证任务。
 
 ## 查找视频
 
@@ -34,7 +34,7 @@ boof=0
 
 ## 写入数据
 
-将结果写入 `data/athieno/latest.json`，保留现有 JSON 结构并完整包含：
+将结果写入 `inputs/athieno/latest.json`，保留现有 JSON 结构并完整包含：
 
 - `source`：`creator`、`title`、`url`、`video_id`、`published`、`season`、
   `covered_patch`、`covered_through`、`coverage_basis`、`final_frame`、`captured_at`
@@ -43,4 +43,4 @@ boof=0
 
 写入前验证 JSON 可解析、七档成员互斥、所有干员恰好出现一次、`score_map` 与档位映射一致。
 验证失败时停止并保留旧文件。完成后只报告视频来源、最终画面时间、覆盖版本、干员数量和
-`data/athieno/latest.json` 路径。
+`inputs/athieno/latest.json` 路径。

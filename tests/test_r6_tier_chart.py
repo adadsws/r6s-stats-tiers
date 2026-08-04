@@ -56,6 +56,27 @@ def source_row(
 
 
 class ParserTests(unittest.TestCase):
+    def test_parses_all_named_weapons_and_matching_rates(self):
+        automatic = chart.parse_automatic_weapons(
+            "G8A1（850）\nAUG A2（720）\n552 Commando（690）"
+        )
+        named = chart.parse_named_weapons("Mk 14 EBR\nBOSG.12.2")
+
+        self.assertEqual(
+            [(item.name, item.firerate) for item in automatic],
+            [
+                ("G8A1", 850),
+                ("AUG A2", 720),
+                ("552 Commando", 690),
+            ],
+        )
+        self.assertEqual(
+            [(item.name, item.firerate) for item in named],
+            [("Mk 14 EBR", None), ("BOSG.12.2", None)],
+        )
+        self.assertEqual(chart.parse_automatic_weapons("无自动枪械"), ())
+        self.assertEqual(chart.parse_named_weapons("无"), ())
+
     def test_reads_only_structured_table_rows_before_trailing_status(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "source-with-status.xlsx"
@@ -102,6 +123,22 @@ class ParserTests(unittest.TestCase):
         self.assertTrue(alice.has_semiautomatic)
         self.assertTrue(alice.has_secondary_shotgun)
         self.assertEqual(
+            [(item.name, item.firerate) for item in alice.primary_weapons],
+            [("R4-C", 900), ("L85A2", 700)],
+        )
+        self.assertEqual(
+            [(item.name, item.firerate) for item in alice.secondary_weapons],
+            [("SMG-11", 1270)],
+        )
+        self.assertEqual(
+            [item.name for item in alice.semiautomatic_weapons],
+            ["417"],
+        )
+        self.assertEqual(
+            [item.name for item in alice.secondary_shotguns],
+            ["ITA12S"],
+        )
+        self.assertEqual(
             alice.gadgets,
             (
                 chart.GadgetItem("破片手榴弹", 2),
@@ -146,6 +183,66 @@ class ParserTests(unittest.TestCase):
 
 
 class GadgetIconTests(unittest.TestCase):
+    def test_prepares_all_weapon_icons_as_cropped_dark_silhouettes(self):
+        source = io.BytesIO()
+        image = Image.new("RGBA", (12, 8), (255, 255, 255, 0))
+        for x in range(3, 9):
+            for y in range(2, 6):
+                image.putpixel((x, y), (240, 120, 60, 255))
+        image.save(source, format="PNG")
+        calls = []
+
+        def query_json(parameters):
+            title = parameters["titles"]
+            return {
+                "query": {
+                    "pages": [{
+                        "imageinfo": [{
+                            "url": (
+                                "https://huiji-public.huijistatic.com/r6s/"
+                                + title.rsplit(" ", 1)[-1].replace(".png", "")
+                                + ".png"
+                            )
+                        }]
+                    }]
+                }
+            }
+
+        def runner(command, **kwargs):
+            calls.append(command)
+            destination = Path(command[command.index("--output") + 1])
+            destination.write_bytes(source.getvalue())
+            return SimpleNamespace()
+
+        items = (
+            chart.WeaponItem("R4-C", "r4-c", 860),
+            chart.WeaponItem("G8A1", "g8a1", 850),
+            chart.WeaponItem("R4-C", "r4-c", 860),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            paths = chart.prepare_weapon_icons(
+                items,
+                Path(directory),
+                query_json=query_json,
+                run_command=runner,
+                which=lambda _: "C:/curl.exe",
+                sleep=lambda _: None,
+            )
+            self.assertEqual(tuple(paths), ("r4-c", "g8a1"))
+            self.assertEqual(len(calls), 2)
+            with Image.open(paths["r4-c"]) as icon:
+                self.assertEqual(icon.size, (6, 4))
+                visible = [
+                    pixel
+                    for pixel in icon.convert("RGBA").get_flattened_data()
+                    if pixel[3] > 0
+                ]
+
+        self.assertTrue(visible)
+        self.assertTrue(
+            all(pixel[:3] == (32, 35, 39) for pixel in visible)
+        )
+
     def test_official_gadget_file_map_is_complete_and_exact(self):
         self.assertEqual(
             chart.GADGET_FILES,

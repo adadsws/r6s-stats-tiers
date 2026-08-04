@@ -5,6 +5,40 @@ import _path_setup
 
 
 class PackageLayoutTests(unittest.TestCase):
+    def test_global_agents_layout_contract(self):
+        root = Path(__file__).resolve().parents[1]
+        for required in (
+            "AGENTS.md",
+            "AGENT_CONTEXT.md",
+            "README.md",
+            "CHANGELOG.md",
+        ):
+            self.assertTrue((root / required).is_file(), required)
+        for required_dir in (
+            "inputs",
+            "docs/plans",
+            "docs/finished_plans",
+            "~archive",
+        ):
+            self.assertTrue((root / required_dir).is_dir(), required_dir)
+        for legacy in (
+            "data",
+            "output",
+            "~archived",
+            "docs/superpowers/plans",
+        ):
+            self.assertFalse((root / legacy).exists(), legacy)
+
+        ignore = (root / ".gitignore").read_text(encoding="utf-8")
+        for rule in (
+            "/~temp/",
+            "/~outputs/",
+            "/.worktrees/",
+            "/.venv/",
+            "__pycache__/",
+        ):
+            self.assertIn(rule, ignore)
+
     def test_runtime_modules_are_importable_from_r6_report(self):
         from r6_report import leaderboards, operator_stats
 
@@ -25,6 +59,16 @@ class PackageLayoutTests(unittest.TestCase):
         self.assertEqual(positions, tuple(sorted(positions)))
         self.assertIn("if errorlevel 1", text)
         self.assertIn('set "PYTHONUTF8=1"', text)
+        self.assertIn('--inputs-dir "%~dp0inputs"', text)
+        self.assertIn(
+            '--archive-dir "%~dp0~archive\\data-snapshots"',
+            text,
+        )
+        self.assertIn(
+            '--output "%~dp0~temp\\r6_operator_stats.xlsx"',
+            text,
+        )
+        self.assertIn('--output-dir "%~dp0~outputs"', text)
 
     def test_pipeline_batch_uses_crlf_and_git_preserves_it(self):
         root = Path(__file__).resolve().parents[1]
@@ -46,7 +90,7 @@ class PackageLayoutTests(unittest.TestCase):
             "Athieno",
             "YouTube",
             "final_frame",
-            "data/athieno/latest.json",
+            "inputs/athieno/latest.json",
         ):
             self.assertIn(required, skill)
         for forbidden in (

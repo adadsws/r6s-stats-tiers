@@ -7,7 +7,7 @@ from r6_report.tier_chart import GadgetItem
 
 
 class GadgetSlotTests(unittest.TestCase):
-    def test_attack_gadgets_use_fixed_three_plus_four_slots(self):
+    def test_attack_gadgets_use_fixed_seven_slots(self):
         gadgets = (
             GadgetItem("烟雾弹", 2),
             GadgetItem("破片手榴弹", 2),
@@ -23,14 +23,13 @@ class GadgetSlotTests(unittest.TestCase):
                 None,
                 None,
                 None,
-                None,
                 "阔剑地雷",
                 None,
                 "烟雾弹",
             ),
         )
 
-    def test_defense_gadgets_use_fixed_three_plus_four_slots(self):
+    def test_defense_gadgets_use_fixed_seven_slots(self):
         gadgets = (
             GadgetItem("感应警报器", 2),
             GadgetItem("遥控炸药", 1),
@@ -43,7 +42,6 @@ class GadgetSlotTests(unittest.TestCase):
             tuple(item.name if item else None for item in arranged),
             (
                 "遥控炸药",
-                None,
                 None,
                 None,
                 None,

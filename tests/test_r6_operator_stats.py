@@ -581,7 +581,7 @@ class RatingAndIconTests(unittest.TestCase):
     def test_production_rating_file_has_77_entries(self):
         path = (
             Path(__file__).resolve().parents[1]
-            / "data"
+            / "inputs"
             / "athieno"
             / "latest.json"
         )
@@ -617,6 +617,11 @@ class BatchLauncherTests(unittest.TestCase):
         self.assertIn('where python', content)
         self.assertIn('where py', content)
         self.assertIn("-m r6_report.operator_stats", content)
+        self.assertIn('--inputs-dir "%~dp0inputs"', content)
+        self.assertIn(
+            '--output "%~dp0~temp\\r6_operator_stats.xlsx"',
+            content,
+        )
         self.assertIn('set "EXIT_CODE=%ERRORLEVEL%"', content)
         self.assertIn('exit /b %EXIT_CODE%', content)
 

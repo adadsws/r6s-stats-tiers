@@ -19,6 +19,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas as pdf_canvas
 from reportlab.platypus import (
     Image,
+    KeepInFrame,
     KeepTogether,
     PageBreak,
     Paragraph,
@@ -26,13 +27,20 @@ from reportlab.platypus import (
     Spacer,
     Table,
     TableStyle,
+    XPreformatted,
 )
 from PIL import Image as PillowImage
 
 from . import report_theme as theme
 from .gadget_slots import arrange_gadgets
 from .sources import ReportSources
-from .tier_chart import CARDS_PER_ROW, OperatorCard, SOURCE_SHEETS, operator_key
+from .tier_chart import (
+    CARDS_PER_ROW,
+    OperatorCard,
+    SOURCE_SHEETS,
+    WeaponItem,
+    operator_key,
+)
 from .tiers import TIER_COLORS
 
 
@@ -89,6 +97,10 @@ def _style(size=9, *, bold=False, color="#202327", align=TA_LEFT):
 
 def _p(text, style):
     return Paragraph(escape(str(text)).replace("\n", "<br/>"), style)
+
+
+def _nobr_p(text, style):
+    return XPreformatted(escape(str(text)), style)
 
 
 def _feature_p(label: str, present: bool, style):
@@ -150,17 +162,45 @@ def _card_flowable(
     card: OperatorCard,
     badge_dir: Path,
     gadget_icons: Mapping[str, Path],
+    weapon_icons: Mapping[str, Path],
     marker: str,
 ):
     badge_path = badge_dir / (operator_key(card.name) + ".png")
     badge = Image(str(badge_path), width=15 * mm, height=15 * mm)
-    name = _p(
+    badge.hAlign = "CENTER"
+    badge_name_size = theme.PDF_FONT_SIZES["gadget"]
+    badge_name_width = pdfmetrics.stringWidth(
+        card.name,
+        PDF_FONT,
+        badge_name_size,
+    )
+    if badge_name_width > 14 * mm:
+        badge_name_size *= (14 * mm) / badge_name_width
+    badge_name = _nobr_p(
         card.name,
         _style(
-            theme.PDF_FONT_SIZES["name"],
+            badge_name_size,
             bold=True,
-            color="#" + theme.COLOURS["text"],
+            color="#" + theme.COLOURS["text_strong"],
+            align=TA_CENTER,
         ),
+    )
+    badge_panel = Table(
+        [[badge], [badge_name]],
+        colWidths=[15 * mm],
+        rowHeights=[15 * mm, 4 * mm],
+    )
+    badge_panel.setStyle(
+        TableStyle(
+            [
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
     )
     tier = _p(
         "%s%s" % (card.tier, marker),
@@ -175,6 +215,49 @@ def _card_flowable(
             align=TA_CENTER,
         ),
     )
+    speed = _p(
+        "%d速" % card.speed,
+        _style(
+            theme.PDF_FONT_SIZES["body"],
+            color="#" + theme.COLOURS["text_strong"],
+            align=TA_CENTER,
+        ),
+    )
+    summary = Table(
+        [[tier, speed]],
+        colWidths=[15.5 * mm, 15.5 * mm],
+        rowHeights=[7 * mm],
+    )
+    summary.setStyle(
+        TableStyle(
+            [
+                (
+                    "BACKGROUND",
+                    (0, 0),
+                    (0, 0),
+                    colors.HexColor("#" + TIER_COLORS[card.tier]),
+                ),
+                (
+                    "BACKGROUND",
+                    (1, 0),
+                    (1, 0),
+                    colors.HexColor("#" + theme.COLOURS["card_fill"]),
+                ),
+                (
+                    "GRID",
+                    (0, 0),
+                    (-1, -1),
+                    0.55,
+                    colors.HexColor("#" + theme.COLOURS["card_grid"]),
+                ),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 1),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 1),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
     secondary_shotgun_text = theme.feature_text(
         "副喷",
         card.has_secondary_shotgun,
@@ -183,62 +266,103 @@ def _card_flowable(
         "主狙",
         card.has_semiautomatic,
     )
-    secondary_rpm_text = theme.rpm_text("副", card.secondary_rpms)
-    primary_rpm_text = theme.rpm_text("主", card.primary_rpms)
-    info = Table(
+    primary_fields = [
+        _weapon_field_flowable(
+            _nobr_p(
+                theme.rpm_text(
+                    "主",
+                    (weapon.firerate,) if weapon.firerate is not None else (),
+                ),
+                _style(theme.PDF_FONT_SIZES["body"]),
+            ),
+            (weapon,),
+            weapon_icons,
+            field_width_mm=30,
+        )
+        for weapon in card.primary_weapons[:3]
+    ]
+    primary_fields.extend([""] * (3 - len(primary_fields)))
+    secondary_fields = [
+        _weapon_field_flowable(
+            _nobr_p(
+                theme.rpm_text(
+                    "副",
+                    (weapon.firerate,) if weapon.firerate is not None else (),
+                ),
+                _style(theme.PDF_FONT_SIZES["body"]),
+            ),
+            (weapon,),
+            weapon_icons,
+            field_width_mm=30,
+        )
+        for weapon in card.secondary_weapons[:2]
+    ]
+    secondary_fields.extend([""] * (2 - len(secondary_fields)))
+    primary_sniper = _weapon_field_flowable(
+        _feature_p(
+            "主狙",
+            card.has_semiautomatic,
+            _style(theme.PDF_FONT_SIZES["body"]),
+        ),
+        card.semiautomatic_weapons,
+        weapon_icons,
+        field_width_mm=30,
+    )
+    secondary_shotgun = _weapon_field_flowable(
+        _feature_p(
+            "副喷",
+            card.has_secondary_shotgun,
+            _style(theme.PDF_FONT_SIZES["body"]),
+        ),
+        card.secondary_shotguns,
+        weapon_icons,
+        field_width_mm=30,
+    )
+    details = Table(
         [
             [
-                name,
-                tier,
-                _p(
-                    "%d速" % card.speed,
-                    _style(
-                        theme.PDF_FONT_SIZES["body"],
-                        align=TA_CENTER,
-                    ),
-                ),
-            ],
-            [
-                _feature_p(
-                    "副喷",
-                    card.has_secondary_shotgun,
-                    _style(theme.PDF_FONT_SIZES["body"]),
-                ),
-                _feature_p(
-                    "主狙",
-                    card.has_semiautomatic,
-                    _style(theme.PDF_FONT_SIZES["body"]),
-                ),
+                summary,
+                "",
+                "",
+                primary_sniper,
+                "",
                 "",
             ],
-            [
-                _p(
-                    secondary_rpm_text,
-                    _style(theme.PDF_FONT_SIZES["body"]),
-                ),
-                _p(
-                    primary_rpm_text,
-                    _style(theme.PDF_FONT_SIZES["body"]),
-                ),
-                "",
-            ],
+            [primary_fields[0], "", "", secondary_shotgun, "", ""],
+            [primary_fields[1], "", "", secondary_fields[0], "", ""],
+            [primary_fields[2], "", "", secondary_fields[1], "", ""],
         ],
-        colWidths=[30 * mm, 19 * mm, 12 * mm],
+        colWidths=[(62 / 6) * mm] * 6,
         rowHeights=[
             7 * mm,
             theme.PDF_CARD_BODY_ROW_MM * mm,
             theme.PDF_CARD_BODY_ROW_MM * mm,
+            theme.PDF_CARD_BODY_ROW_MM * mm,
         ],
     )
-    info.setStyle(
+    details.setStyle(
         TableStyle(
             [
                 (
                     "GRID",
                     (0, 0),
                     (-1, -1),
-                    0.35,
-                    colors.HexColor("#" + theme.COLOURS["border"]),
+                    0.55,
+                    colors.HexColor("#" + theme.COLOURS["card_grid"]),
+                ),
+                (
+                    "BOX",
+                    (0, 0),
+                    (-1, -1),
+                    0.85,
+                    colors.HexColor("#" + theme.COLOURS["card_divider"]),
+                ),
+                (
+                    "LINEBEFORE",
+                    (3, 0),
+                    (3, -1),
+                    0.85,
+                    colors.HexColor("#" + theme.COLOURS["card_divider"]),
                 ),
                 (
                     "BACKGROUND",
@@ -247,18 +371,29 @@ def _card_flowable(
                     colors.HexColor("#" + theme.COLOURS["card_fill"]),
                 ),
                 (
-                    "BACKGROUND",
-                    (1, 0),
-                    (1, 0),
-                    colors.HexColor("#" + TIER_COLORS[card.tier]),
+                    "LINEBELOW",
+                    (3, 1),
+                    (5, 1),
+                    0.85,
+                    colors.HexColor("#" + theme.COLOURS["card_divider"]),
                 ),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("SPAN", (1, 1), (2, 1)),
-                ("SPAN", (1, 2), (2, 2)),
+                ("SPAN", (0, 0), (2, 0)),
+                ("SPAN", (3, 0), (5, 0)),
+                ("SPAN", (0, 1), (2, 1)),
+                ("SPAN", (3, 1), (5, 1)),
+                ("SPAN", (0, 2), (2, 2)),
+                ("SPAN", (3, 2), (5, 2)),
+                ("SPAN", (0, 3), (2, 3)),
+                ("SPAN", (3, 3), (5, 3)),
                 ("LEFTPADDING", (0, 0), (-1, -1), 2),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 2),
                 ("TOPPADDING", (0, 0), (-1, -1), 1),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                ("LEFTPADDING", (0, 0), (0, 0), 0),
+                ("RIGHTPADDING", (0, 0), (0, 0), 0),
+                ("TOPPADDING", (0, 0), (0, 0), 0),
+                ("BOTTOMPADDING", (0, 0), (0, 0), 0),
             ]
             + [
                 (
@@ -268,10 +403,8 @@ def _card_flowable(
                     colors.HexColor("#" + theme.MISSING_FILL),
                 )
                 for column, row, value in (
-                    (0, 1, secondary_shotgun_text),
-                    (1, 1, primary_sniper_text),
-                    (0, 2, secondary_rpm_text),
-                    (1, 2, primary_rpm_text),
+                    (3, 0, primary_sniper_text),
+                    (3, 1, secondary_shotgun_text),
                 )
                 if theme.is_missing_field(value)
             ]
@@ -296,19 +429,30 @@ def _card_flowable(
         )
         icon.hAlign = "CENTER"
         gadget_cells.append(icon)
-    gadget_rows = [
-        gadget_cells[:theme.GADGETS_PER_LINE],
-        gadget_cells[theme.GADGETS_PER_LINE:],
-    ]
     gadgets = Table(
-        gadget_rows,
-        colWidths=[19 * mm] * theme.GADGETS_PER_LINE,
+        [gadget_cells],
+        colWidths=[11 * mm] * 7,
+        rowHeights=[8 * mm],
     )
     gadgets.setStyle(
         TableStyle(
             [
                 ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                (
+                    "GRID",
+                    (0, 0),
+                    (-1, -1),
+                    0.55,
+                    colors.HexColor("#" + theme.COLOURS["card_grid"]),
+                ),
+                (
+                    "BOX",
+                    (0, 0),
+                    (-1, -1),
+                    0.85,
+                    colors.HexColor("#" + theme.COLOURS["card_divider"]),
+                ),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                 ("TOPPADDING", (0, 0), (-1, -1), 0),
@@ -317,9 +461,9 @@ def _card_flowable(
         )
     )
     card_table = Table(
-        [[badge, info], [gadgets, ""]],
+        [[badge_panel, details], [gadgets, ""]],
         colWidths=[15 * mm, 62 * mm],
-        rowHeights=[20 * mm, 13 * mm],
+        rowHeights=[25 * mm, 8 * mm],
     )
     card_table.setStyle(
         TableStyle(
@@ -331,11 +475,32 @@ def _card_flowable(
                     colors.HexColor("#" + theme.COLOURS["card_fill"]),
                 ),
                 (
+                    "GRID",
+                    (0, 0),
+                    (-1, -1),
+                    0.55,
+                    colors.HexColor("#" + theme.COLOURS["card_grid"]),
+                ),
+                (
                     "BOX",
                     (0, 0),
                     (-1, -1),
-                    0.5,
-                    colors.HexColor("#" + theme.COLOURS["border"]),
+                    0.85,
+                    colors.HexColor("#" + theme.COLOURS["card_divider"]),
+                ),
+                (
+                    "LINEBEFORE",
+                    (1, 0),
+                    (1, 0),
+                    0.85,
+                    colors.HexColor("#" + theme.COLOURS["card_divider"]),
+                ),
+                (
+                    "LINEABOVE",
+                    (0, 1),
+                    (-1, 1),
+                    0.85,
+                    colors.HexColor("#" + theme.COLOURS["card_divider"]),
                 ),
                 ("SPAN", (0, 1), (1, 1)),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -343,10 +508,90 @@ def _card_flowable(
                 ("RIGHTPADDING", (0, 0), (-1, -1), 2),
                 ("TOPPADDING", (0, 0), (-1, -1), 1),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                ("TOPPADDING", (0, 0), (-1, 0), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 0),
+                ("LEFTPADDING", (0, 1), (-1, 1), 0),
+                ("RIGHTPADDING", (0, 1), (-1, 1), 0),
+                ("TOPPADDING", (0, 1), (-1, 1), 0),
+                ("BOTTOMPADDING", (0, 1), (-1, 1), 0),
             ]
         )
     )
     return card_table
+
+
+def _weapon_field_flowable(
+    text,
+    items: Tuple[WeaponItem, ...],
+    weapon_icons: Mapping[str, Path],
+    *,
+    field_width_mm: float = 28,
+    icon_area_mm: float = theme.PDF_WEAPON_ICON_AREA_MM,
+):
+    if not items:
+        return text
+    icon_area = icon_area_mm * mm
+    slot_width = icon_area / len(items)
+    icon_cells = []
+    for item in items:
+        path = weapon_icons.get(item.icon_key)
+        if path is None:
+            raise ValueError("找不到枪械图标：%s" % item.name)
+        width, height = _fit_image_size(
+            path,
+            slot_width,
+            theme.PDF_WEAPON_ICON_HEIGHT_MM * mm,
+        )
+        icon = Image(
+            _cropped_image_source(path),
+            width=width,
+            height=height,
+        )
+        icon.hAlign = "CENTER"
+        icon_cells.append(icon)
+    icons = Table(
+        [icon_cells],
+        colWidths=[slot_width] * len(items),
+        rowHeights=[theme.PDF_WEAPON_ICON_HEIGHT_MM * mm],
+    )
+    icons.setStyle(
+        TableStyle(
+            [
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    field_width = field_width_mm * mm
+    text_width = field_width - icon_area
+    text_box = KeepInFrame(
+        text_width,
+        4 * mm,
+        [text],
+        mode="shrink",
+        mergeSpace=False,
+    )
+    field = Table(
+        [[text_box, icons]],
+        colWidths=[text_width, icon_area],
+        rowHeights=[4 * mm],
+    )
+    field.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    return field
 
 
 def _source_lines(sources: ReportSources):
@@ -464,6 +709,7 @@ def write_leaderboard_pdf(
     cards: Mapping[str, Iterable[OperatorCard]],
     operator_icon_dir: Path,
     gadget_icons: Mapping[str, Path],
+    weapon_icons: Mapping[str, Path],
     report_sources: ReportSources,
 ) -> None:
     """Write one PDF containing attack, defense, and patch-note sections."""
@@ -533,6 +779,7 @@ def write_leaderboard_pdf(
                         card,
                         Path(operator_icon_dir),
                         gadget_icons,
+                        weapon_icons,
                         markers.get(card.name, ""),
                     )
                     for card in chunk

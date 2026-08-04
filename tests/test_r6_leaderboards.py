@@ -27,6 +27,7 @@ def make_card(
     *,
     side="进攻方",
     visible_tier="A",
+    score=85,
     speed=2,
     primary=(800,),
     secondary=(),
@@ -34,11 +35,27 @@ def make_card(
     has_secondary_shotgun=False,
     gadgets=("烟雾弹",),
 ):
+    primary_weapons = tuple(
+        tier.WeaponItem(
+            "Primary %d" % index,
+            "primary-%d" % index,
+            rate,
+        )
+        for index, rate in enumerate(primary, start=1)
+    )
+    secondary_weapons = tuple(
+        tier.WeaponItem(
+            "Secondary %d" % index,
+            "secondary-%d" % index,
+            rate,
+        )
+        for index, rate in enumerate(secondary, start=1)
+    )
     return tier.OperatorCard(
         side=side,
         name=name,
         speed=speed,
-        score=85,
+        score=score,
         tier=visible_tier,
         primary_rpms=primary,
         secondary_rpms=secondary,
@@ -46,10 +63,37 @@ def make_card(
         has_secondary_shotgun=has_secondary_shotgun,
         gadgets=tuple(tier.GadgetItem(item, 2) for item in gadgets),
         source_order=order,
+        primary_weapons=primary_weapons,
+        secondary_weapons=secondary_weapons,
+        semiautomatic_weapons=(
+            (tier.WeaponItem("Primary Marksman", "primary-marksman"),)
+            if has_semiautomatic
+            else ()
+        ),
+        secondary_shotguns=(
+            (tier.WeaponItem("Secondary Shotgun", "secondary-shotgun"),)
+            if has_secondary_shotgun
+            else ()
+        ),
     )
 
 
 class LeaderboardClassificationTests(unittest.TestCase):
+    def test_loads_each_required_weapon_icon_once(self):
+        items = (
+            tier.WeaponItem("R4-C", "r4-c", 860),
+            tier.WeaponItem("R4-C", "r4-c", 860),
+            tier.WeaponItem("G8A1", "g8a1", 850),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            Image.new("RGBA", (24, 8), "black").save(root / "r4-c.png")
+            Image.new("RGBA", (24, 8), "black").save(root / "g8a1.png")
+
+            paths = lb.load_weapon_icons(items, root)
+
+        self.assertEqual(tuple(paths), ("r4-c", "g8a1"))
+
     def test_defines_five_dimensions_in_global_priority_order(self):
         self.assertEqual(
             lb.DIMENSION_ORDER,
@@ -233,6 +277,58 @@ class LeaderboardClassificationTests(unittest.TestCase):
 
 
 class LeaderboardSortingTests(unittest.TestCase):
+    def test_primary_band_uses_raw_rpm_before_video(self):
+        cards = [
+            make_card(
+                "Higher Video Lower RPM",
+                1,
+                visible_tier="S",
+                primary=(860,),
+            ),
+            make_card(
+                "Lower Video Higher RPM",
+                2,
+                visible_tier="A",
+                primary=(900,),
+            ),
+        ]
+
+        sorted_cards = lb.sort_cards_for_band(
+            cards,
+            "primary_rpm",
+            "进攻方",
+        )
+
+        self.assertEqual(
+            [card.name for card in sorted_cards],
+            ["Lower Video Higher RPM", "Higher Video Lower RPM"],
+        )
+
+    def test_video_band_uses_raw_score_before_primary_rpm(self):
+        cards = [
+            make_card(
+                "Lower Score Higher RPM",
+                1,
+                visible_tier="S",
+                score=90,
+                primary=(900,),
+            ),
+            make_card(
+                "Higher Score Lower RPM",
+                2,
+                visible_tier="S",
+                score=95,
+                primary=(700,),
+            ),
+        ]
+
+        sorted_cards = lb.sort_cards_for_band(cards, "video", "进攻方")
+
+        self.assertEqual(
+            [card.name for card in sorted_cards],
+            ["Higher Score Lower RPM", "Lower Score Higher RPM"],
+        )
+
     def test_video_band_uses_primary_then_speed_before_later_dimensions(self):
         cards = [
             make_card(
@@ -338,6 +434,59 @@ class LeaderboardSortingTests(unittest.TestCase):
             ["S Low Primary", "A High Primary", "A Low Primary"],
         )
 
+    def test_rare_band_does_not_promote_other_rare_memberships(self):
+        cards = [
+            make_card(
+                "Higher Video Current Membership Only",
+                1,
+                visible_tier="S",
+                has_semiautomatic=True,
+            ),
+            make_card(
+                "Lower Video Also Higher Membership",
+                2,
+                visible_tier="A",
+                has_semiautomatic=True,
+                has_secondary_shotgun=True,
+            ),
+        ]
+
+        sorted_cards = lb.sort_cards_for_band(cards, "rare", "进攻方")
+
+        self.assertEqual(
+            [card.name for card in sorted_cards],
+            [
+                "Higher Video Current Membership Only",
+                "Lower Video Also Higher Membership",
+            ],
+        )
+
+    def test_gadget_band_does_not_promote_other_gadget_memberships(self):
+        cards = [
+            make_card(
+                "Higher Video Current Membership Only",
+                1,
+                visible_tier="S",
+                gadgets=("闪光弹",),
+            ),
+            make_card(
+                "Lower Video Also Higher Membership",
+                2,
+                visible_tier="A",
+                gadgets=("破片手榴弹", "闪光弹"),
+            ),
+        ]
+
+        sorted_cards = lb.sort_cards_for_band(cards, "gadget", "进攻方")
+
+        self.assertEqual(
+            [card.name for card in sorted_cards],
+            [
+                "Higher Video Current Membership Only",
+                "Lower Video Also Higher Membership",
+            ],
+        )
+
     def test_source_order_is_the_final_tie_breaker(self):
         cards = [
             make_card("Later", 4),
@@ -391,12 +540,12 @@ class LeaderboardSortingTests(unittest.TestCase):
 
 class LeaderboardWorkbookTests(unittest.TestCase):
     @staticmethod
-    def _card_name_cell(sheet, name):
+    def _card_tier_cell(sheet, tier_text):
         for row in sheet.iter_rows():
             for cell in row:
-                if cell.value == name:
+                if cell.column > 1 and cell.value == tier_text:
                     return cell
-        raise AssertionError("operator card not found: %s" % name)
+        raise AssertionError("operator card tier not found: %s" % tier_text)
 
     def _write_workbook(
         self,
@@ -426,6 +575,25 @@ class LeaderboardWorkbookTests(unittest.TestCase):
             Image.new("RGBA", (32, 32), "black").save(icon)
             gadget_icons[name] = icon
 
+        weapon_icons = {}
+        weapon_items = (
+            weapon
+            for card in all_cards
+            for group in (
+                card.primary_weapons,
+                card.secondary_weapons,
+                card.semiautomatic_weapons,
+                card.secondary_shotguns,
+            )
+            for weapon in group
+        )
+        for weapon in weapon_items:
+            if weapon.icon_key in weapon_icons:
+                continue
+            icon = root / ("weapon-%s.png" % weapon.icon_key)
+            Image.new("RGBA", (36, 12), "black").save(icon)
+            weapon_icons[weapon.icon_key] = icon
+
         output = root / ("%s.xlsx" % dimension)
         lb.write_leaderboard_workbook(
             output,
@@ -433,11 +601,106 @@ class LeaderboardWorkbookTests(unittest.TestCase):
             {"进攻方": attackers, "防守方": defenders},
             badge_dir,
             gadget_icons,
+            weapon_icons,
             report_sources or make_report_sources(),
         )
         return load_workbook(output)
 
-    def test_renders_four_row_cards_and_wraps_sixth_inside_same_band(self):
+    def test_renders_operator_name_below_full_size_badge(self):
+        attacker = replace(
+            make_card(
+                "Multi Weapon",
+                1,
+                primary=(980, 860, 750),
+                secondary=(1270, 1000),
+                has_semiautomatic=True,
+                has_secondary_shotgun=True,
+            ),
+            semiautomatic_weapons=(
+                tier.WeaponItem("DMR One", "dmr-one"),
+                tier.WeaponItem("DMR Two", "dmr-two"),
+            ),
+            secondary_shotguns=(
+                tier.WeaponItem("Shotgun One", "shotgun-one"),
+                tier.WeaponItem("Shotgun Two", "shotgun-two"),
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            workbook = self._write_workbook(
+                Path(directory),
+                "video",
+                (attacker,),
+                (),
+            )
+
+        sheet = workbook["进攻方视频Tier榜"]
+        tier_cell = self._card_tier_cell(sheet, "A")
+        card_row = tier_cell.row
+        badge_column = tier_cell.column - 1
+        primary_column = badge_column + 1
+        speed_column = badge_column + 3
+        secondary_column = badge_column + 4
+        badge_cell = sheet.cell(card_row, badge_column)
+        self.assertEqual(badge_cell.value, "Multi Weapon")
+        self.assertEqual(badge_cell.alignment.vertical, "bottom")
+        self.assertTrue(badge_cell.alignment.shrink_to_fit)
+        badge_image = next(
+            image
+            for image in sheet._images
+            if image.anchor._from.row == card_row - 1
+            and image.anchor._from.col == badge_column - 1
+        )
+        self.assertEqual(round(badge_image.anchor.ext.cx / 9525), 48)
+        self.assertEqual(round(badge_image.anchor.ext.cy / 9525), 48)
+        self.assertEqual(
+            [
+                sheet.cell(card_row, primary_column).value,
+                sheet.cell(card_row, speed_column).value,
+                sheet.cell(card_row, secondary_column).value,
+            ],
+            ["A", "2速", "主狙 ✓"],
+        )
+        self.assertEqual(
+            [sheet.cell(card_row + offset, primary_column).value for offset in (1, 2, 3)],
+            ["主 980", "主 860", "主 750"],
+        )
+        self.assertEqual(
+            [sheet.cell(card_row + offset, secondary_column).value for offset in (1, 2, 3)],
+            ["副喷 ✓", "副 1270", "副 1000"],
+        )
+        weapon_images = [
+            image
+            for image in sheet._images
+            if image.anchor._from.row
+            in tuple(card_row - 1 + offset for offset in range(4))
+            and round(image.anchor.ext.cy / 9525)
+            <= theme.XLSX_WEAPON_ICON_HEIGHT_PX
+        ]
+        self.assertEqual(
+            [
+                sum(
+                    image.anchor._from.row == card_row + offset - 1
+                    and image.anchor._from.col == primary_column - 1
+                    for image in weapon_images
+                )
+                for offset in (1, 2, 3)
+            ],
+            [1, 1, 1],
+        )
+        self.assertEqual(
+            [
+                sum(
+                    image.anchor._from.row == card_row + offset - 1
+                    and image.anchor._from.col == secondary_column - 1
+                    for image in weapon_images
+                )
+                for offset in (1, 2, 3)
+            ],
+            [2, 1, 1],
+        )
+
+    def test_renders_five_row_cards_and_wraps_sixth_inside_same_band(self):
         attackers = tuple(
             make_card(
                 "Attacker %d" % index,
@@ -475,45 +738,73 @@ class LeaderboardWorkbookTests(unittest.TestCase):
         )
         sheet = workbook["进攻方视频Tier榜"]
         merged = {str(item) for item in sheet.merged_cells.ranges}
-        self.assertIn("A3:A10", merged)
-        self.assertIn("B3:B5", merged)
+        self.assertIn("A3:A12", merged)
+        self.assertIn("B3:B6", merged)
         self.assertIn("C3:D3", merged)
-        self.assertIn("C4:D4", merged)
-        self.assertIn("E4:F4", merged)
-        self.assertIn("C5:D5", merged)
-        self.assertIn("E5:F5", merged)
-        self.assertIn("B6:F6", merged)
-        self.assertEqual(sheet["C3"].value, "Attacker 1")
-        self.assertEqual(sheet["E3"].value, "S")
-        self.assertEqual(sheet["F3"].value, "3速")
-        self.assertEqual(sheet["C4"].value, "副喷 ✓")
-        self.assertEqual(sheet["E4"].value, "主狙 ✓")
-        self.assertEqual(sheet["C5"].value, "副 1270")
-        self.assertEqual(sheet["E5"].value, "主 900/700")
-        self.assertEqual(sheet["C7"].value, "Attacker 6")
+        self.assertIn("F3:H3", merged)
+        self.assertIn("C4:E4", merged)
+        self.assertIn("F4:H4", merged)
+        self.assertIn("C5:E5", merged)
+        self.assertIn("F5:H5", merged)
+        self.assertIn("C6:E6", merged)
+        self.assertIn("F6:H6", merged)
+        self.assertEqual(sheet["C3"].value, "S")
+        self.assertEqual(sheet["E3"].value, "3速")
+        self.assertEqual(sheet["F3"].value, "主狙 ✓")
+        self.assertEqual(sheet["C4"].value, "主 900")
+        self.assertEqual(sheet["F4"].value, "副喷 ✓")
+        self.assertEqual(sheet["C5"].value, "主 700")
+        self.assertEqual(sheet["F5"].value, "副 1270")
+        self.assertIsNone(sheet["C6"].value)
+        self.assertIsNone(sheet["F6"].value)
+        self.assertEqual(sheet["C3"].border.right.style, "thin")
+        self.assertEqual(sheet["E3"].border.left.style, "thin")
+        self.assertEqual(sheet["E3"].border.right.style, "medium")
+        self.assertEqual(sheet["F3"].border.left.style, "medium")
+        self.assertEqual(sheet["C4"].border.right.style, "medium")
+        self.assertEqual(sheet["F4"].border.left.style, "medium")
+        self.assertEqual(sheet["C4"].border.bottom.style, "thin")
+        self.assertEqual(sheet["F4"].border.bottom.style, "medium")
+        self.assertEqual(
+            sheet["C4"].border.bottom.color.rgb[-6:],
+            "8F969E",
+        )
+        self.assertEqual(sheet["B7"].border.right.style, "thin")
+        self.assertEqual(sheet["B7"].border.bottom.style, "medium")
+        self.assertAlmostEqual(
+            sheet.column_dimensions["C"].width
+            + sheet.column_dimensions["D"].width,
+            sheet.column_dimensions["E"].width,
+        )
+        self.assertEqual(sheet["C8"].value, "S")
+        self.assertEqual(sheet["E8"].value, "3速")
+        self.assertEqual(sheet["B3"].value, "Attacker 1")
+        self.assertEqual(sheet["B8"].value, "Attacker 6")
         self.assertEqual(sheet.freeze_panes, "B3")
         self.assertIn(
             "补丁区间：", sheet.cell(sheet.max_row, 1).value
         )
         self.assertIn(
-            "A%d:AE%d" % (sheet.max_row, sheet.max_row),
+            "A%d:AO%d" % (sheet.max_row, sheet.max_row),
             merged,
         )
         self.assertEqual(
-            sheet["E3"].fill.fgColor.rgb[-6:],
+            sheet["C3"].fill.fgColor.rgb[-6:],
             tier.TIER_COLORS["S"],
         )
+        self.assertEqual(
+            sheet["E3"].fill.fgColor.rgb[-6:],
+            "F4F5F7",
+        )
         missing_sheet = workbook["防守方视频Tier榜"]
-        defender_name = self._card_name_cell(missing_sheet, "Defender")
+        defender_tier = self._card_tier_cell(missing_sheet, "F")
         missing_cells = (
-            missing_sheet.cell(defender_name.row + 1, defender_name.column),
-            missing_sheet.cell(defender_name.row + 1, defender_name.column + 2),
-            missing_sheet.cell(defender_name.row + 2, defender_name.column),
-            missing_sheet.cell(defender_name.row + 2, defender_name.column + 2),
+            missing_sheet.cell(defender_tier.row, defender_tier.column + 3),
+            missing_sheet.cell(defender_tier.row + 1, defender_tier.column + 3),
         )
         self.assertEqual(
             tuple(cell.value for cell in missing_cells),
-            ("副喷 -", "主狙 -", "副 -", "主 -"),
+            ("主狙 -", "副喷 -"),
         )
         for cell in missing_cells:
             self.assertEqual(
@@ -541,28 +832,16 @@ class LeaderboardWorkbookTests(unittest.TestCase):
                 make_report_sources(with_changes=True),
             )
 
-        attacker_name = self._card_name_cell(
+        attacker_tier = self._card_tier_cell(
             workbook["进攻方视频Tier榜"],
-            "Alice",
-        )
-        defender_name = self._card_name_cell(
-            workbook["防守方视频Tier榜"],
-            "Bob",
-        )
-        self.assertEqual(
-            workbook["进攻方视频Tier榜"].cell(
-                attacker_name.row,
-                attacker_name.column + 2,
-            ).value,
             "A~",
         )
-        self.assertEqual(
-            workbook["防守方视频Tier榜"].cell(
-                defender_name.row,
-                defender_name.column + 2,
-            ).value,
+        defender_tier = self._card_tier_cell(
+            workbook["防守方视频Tier榜"],
             "B-",
         )
+        self.assertEqual(attacker_tier.value, "A~")
+        self.assertEqual(defender_tier.value, "B-")
 
     def test_card_text_is_not_highlighted_red(self):
         attacker = make_card(
@@ -608,12 +887,12 @@ class LeaderboardWorkbookTests(unittest.TestCase):
         primary_sheet = primary["进攻方主武器射速榜"]
         speed_sheet = speed["进攻方速度榜"]
         rare_sheet = rare["进攻方稀有枪械榜"]
-        self.assertNotEqual(primary_sheet["E5"].font.color.rgb[-6:], "E74C3C")
-        self.assertFalse(primary_sheet["E5"].font.bold)
-        self.assertNotEqual(speed_sheet["F3"].font.color.rgb[-6:], "E74C3C")
-        self.assertFalse(speed_sheet["F3"].font.bold)
-        self.assertNotEqual(rare_sheet["C4"].font.color.rgb[-6:], "E74C3C")
-        self.assertFalse(rare_sheet["C4"].font.bold)
+        self.assertNotEqual(primary_sheet["C4"].font.color.rgb[-6:], "E74C3C")
+        self.assertFalse(primary_sheet["C4"].font.bold)
+        self.assertNotEqual(speed_sheet["C4"].font.color.rgb[-6:], "E74C3C")
+        self.assertFalse(speed_sheet["C4"].font.bold)
+        self.assertNotEqual(rare_sheet["F4"].font.color.rgb[-6:], "E74C3C")
+        self.assertFalse(rare_sheet["F4"].font.bold)
 
     def test_gadget_token_has_no_red_highlight_border(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -703,46 +982,26 @@ class LeaderboardWorkbookTests(unittest.TestCase):
 
         for sheet_name in ("进攻方视频Tier榜", "防守方视频Tier榜"):
             sheet = workbook[sheet_name]
-            operator_name = (
-                "Striker"
-                if sheet_name.startswith("进攻方")
-                else "Sentry"
-            )
-            name_cell = self._card_name_cell(sheet, operator_name)
-            gadget_row = name_cell.row + 3
+            tier_cell = self._card_tier_cell(sheet, "A")
+            badge_column = tier_cell.column - 1
+            gadget_row = tier_cell.row + 4
             gadget_images = [
                 image
                 for image in sheet._images
-                if image.anchor._from.row == name_cell.row + 2
-                and name_cell.column - 1
-                <= image.anchor._from.col
-                <= name_cell.column + 2
+                if image.anchor._from.row == gadget_row - 1
+                and badge_column - 1 <= image.anchor._from.col
+                < badge_column + 6
             ]
             self.assertEqual(len(gadget_images), 7)
             self.assertEqual(
-                [
-                    (
-                        image.anchor._from.col,
-                        round(image.anchor._from.colOff / 9525),
-                        round(image.anchor._from.rowOff / 9525),
-                    )
-                    for image in gadget_images
-                ],
-                [
-                    (name_cell.column - 1, 14, 0),
-                    (name_cell.column, 14, 0),
-                    (name_cell.column + 1, 14, 0),
-                    (name_cell.column - 1, 14, 22),
-                    (name_cell.column, 14, 22),
-                    (name_cell.column + 1, 14, 22),
-                    (name_cell.column + 2, 14, 22),
-                ],
+                [image.anchor._from.col for image in gadget_images],
+                list(range(badge_column - 1, badge_column + 6)),
             )
             self.assertEqual(
                 sheet.row_dimensions[gadget_row].height,
-                34,
+                theme.XLSX_CARD_BODY_ROW_PT,
             )
-            row_height_px = round(34 * 96 / 72)
+            row_height_px = round(theme.XLSX_CARD_BODY_ROW_PT * 96 / 72)
             for image in gadget_images:
                 top_px = round(image.anchor._from.rowOff / 9525)
                 height_px = round(image.anchor.ext.cy / 9525)
@@ -767,12 +1026,13 @@ class LeaderboardWorkbookTests(unittest.TestCase):
             )
 
         sheet = workbook["进攻方视频Tier榜"]
-        name_cell = self._card_name_cell(sheet, "Sparse")
-        gadget_row = name_cell.row + 3
+        tier_cell = self._card_tier_cell(sheet, "A")
+        badge_column = tier_cell.column - 1
+        gadget_row = tier_cell.row + 4
         gadget_images = [
             image
             for image in sheet._images
-            if image.anchor._from.row == name_cell.row + 2
+            if image.anchor._from.row == gadget_row - 1
         ]
         self.assertEqual(len(gadget_images), 1)
         self.assertEqual(
@@ -781,11 +1041,11 @@ class LeaderboardWorkbookTests(unittest.TestCase):
                 round(gadget_images[0].anchor._from.colOff / 9525),
                 round(gadget_images[0].anchor._from.rowOff / 9525),
             ),
-            (name_cell.column + 2, 14, 22),
+            (badge_column + 5, 6, 0),
         )
         self.assertEqual(
             sheet.row_dimensions[gadget_row].height,
-            34,
+            theme.XLSX_CARD_BODY_ROW_PT,
         )
 
 
@@ -836,7 +1096,7 @@ class LeaderboardCliTests(unittest.TestCase):
             )
 
     def test_pdf_gadget_row_omits_name_and_uses_equal_slots(self):
-        card = make_card("Attacker", 1, gadgets=("烟雾弹",))
+        card = make_card("Attacker", 1, primary=(), gadgets=("烟雾弹",))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             badge_dir = root / "badges"
@@ -857,24 +1117,21 @@ class LeaderboardCliTests(unittest.TestCase):
                 card,
                 badge_dir,
                 {"烟雾弹": icon_path},
+                {},
                 "",
             )
 
             gadget_table = card_table._cellvalues[1][0]
-            self.assertEqual(len(gadget_table._cellvalues), 2)
+            self.assertEqual(len(gadget_table._cellvalues), 1)
             self.assertEqual(
                 gadget_table._colWidths,
-                [19 * mm, 19 * mm, 19 * mm, 19 * mm],
+                [11 * mm] * 7,
             )
             self.assertEqual(
-                gadget_table._cellvalues[0],
-                ["", "", "", ""],
+                gadget_table._cellvalues[0][:6],
+                ["", "", "", "", "", ""],
             )
-            self.assertEqual(
-                gadget_table._cellvalues[1][:3],
-                ["", "", ""],
-            )
-            gadget_icon = gadget_table._cellvalues[1][3]
+            gadget_icon = gadget_table._cellvalues[0][6]
             self.assertIsInstance(gadget_icon, pdf_lb.Image)
             self.assertEqual(gadget_icon.hAlign, "CENTER")
             self.assertAlmostEqual(
@@ -887,6 +1144,167 @@ class LeaderboardCliTests(unittest.TestCase):
                 3 * mm,
                 delta=0.01,
             )
+
+    def test_pdf_renders_every_weapon_icon_in_fixed_height_rows(self):
+        card = replace(
+            make_card(
+                "Multi Weapon",
+                1,
+                primary=(980, 860, 750),
+                secondary=(1270, 1000),
+                has_semiautomatic=True,
+                has_secondary_shotgun=True,
+            ),
+            semiautomatic_weapons=(
+                tier.WeaponItem("DMR One", "dmr-one"),
+                tier.WeaponItem("DMR Two", "dmr-two"),
+            ),
+            secondary_shotguns=(
+                tier.WeaponItem("Shotgun One", "shotgun-one"),
+                tier.WeaponItem("Shotgun Two", "shotgun-two"),
+            ),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            badge_dir = root / "badges"
+            badge_dir.mkdir()
+            Image.new("RGBA", (64, 64), "blue").save(
+                badge_dir / "multi_weapon.png"
+            )
+            gadget_icon = root / "gadget.png"
+            Image.new("RGBA", (32, 32), "black").save(gadget_icon)
+            weapon_icons = {}
+            for weapon in lb.card_weapon_items({"进攻方": (card,), "防守方": ()}):
+                icon = root / (weapon.icon_key + ".png")
+                Image.new("RGBA", (36, 12), "black").save(icon)
+                weapon_icons[weapon.icon_key] = icon
+
+            pdf_lb._register_fonts()
+            card_table = pdf_lb._card_flowable(
+                card,
+                badge_dir,
+                {"烟雾弹": gadget_icon},
+                weapon_icons,
+                "",
+            )
+
+        details = card_table._cellvalues[0][1]
+        badge_panel = card_table._cellvalues[0][0]
+        self.assertIsInstance(badge_panel, pdf_lb.Table)
+        badge_image = badge_panel._cellvalues[0][0]
+        badge_name = badge_panel._cellvalues[1][0]
+        self.assertIsInstance(badge_image, pdf_lb.Image)
+        self.assertAlmostEqual(badge_image._width, 15 * mm)
+        self.assertAlmostEqual(badge_image._height, 15 * mm)
+        self.assertEqual(badge_name.getPlainText(), "Multi Weapon")
+
+        def image_count(value):
+            if isinstance(value, pdf_lb.Image):
+                return 1
+            if isinstance(value, pdf_lb.Table):
+                return sum(
+                    image_count(cell)
+                    for row in value._cellvalues
+                    for cell in row
+                )
+            return 0
+
+        self.assertEqual(len(details._cellvalues), 4)
+        summary = details._cellvalues[0][0]
+        self.assertIsInstance(summary, pdf_lb.Table)
+        self.assertEqual(summary._cellvalues[0][0].getPlainText(), "A")
+        self.assertEqual(summary._cellvalues[0][1].getPlainText(), "2速")
+        self.assertEqual(summary._colWidths[0], summary._colWidths[1])
+        self.assertTrue(
+            any(
+                command[0] == "BACKGROUND"
+                and command[1:3] == ((0, 0), (0, 0))
+                and command[3].hexval() == "0xf39c12"
+                for command in summary._bkgrndcmds
+            )
+        )
+        self.assertEqual(
+            details._cellvalues[0][3]._cellvalues[0][0]
+            ._content[0]
+            .getPlainText(),
+            "主狙 ✓",
+        )
+        self.assertIn(("SPAN", (0, 0), (2, 0)), details._spanCmds)
+        self.assertIn(("SPAN", (3, 0), (5, 0)), details._spanCmds)
+        detail_grid = next(
+            command
+            for command in details._linecmds
+            if command[0] == "GRID"
+        )
+        self.assertEqual(detail_grid[3], 0.55)
+        self.assertEqual(detail_grid[4].hexval(), "0x8f969e")
+        self.assertTrue(
+            any(
+                command[:4] == ("LINEBEFORE", (3, 0), (3, -1), 0.85)
+                for command in details._linecmds
+            )
+        )
+        self.assertTrue(
+            any(
+                command[:4] == ("LINEBELOW", (3, 1), (5, 1), 0.85)
+                for command in details._linecmds
+            )
+        )
+        self.assertEqual(image_count(details._cellvalues[0][3]), 2)
+        self.assertEqual(
+            [image_count(details._cellvalues[row][0]) for row in range(1, 4)],
+            [1, 1, 1],
+        )
+        self.assertEqual(
+            [
+                details._cellvalues[row][0]._cellvalues[0][0]
+                ._content[0]
+                .getPlainText()
+                for row in range(1, 4)
+            ],
+            ["主 980", "主 860", "主 750"],
+        )
+        self.assertEqual(
+            [image_count(details._cellvalues[row][3]) for row in range(1, 4)],
+            [2, 1, 1],
+        )
+        self.assertEqual(
+            [
+                details._cellvalues[row][3]._cellvalues[0][0]
+                ._content[0]
+                .getPlainText()
+                for row in (2, 3)
+            ],
+            ["副 1270", "副 1000"],
+        )
+        primary_rpm_field = details._cellvalues[1][0]
+        text_box = primary_rpm_field._cellvalues[0][0]
+        _, unscaled_height = text_box._content[0].wrap(
+            primary_rpm_field._colWidths[0],
+            1000,
+        )
+        self.assertLessEqual(
+            unscaled_height,
+            text_box._content[0].style.leading,
+        )
+        text_box.canv = canvas.Canvas(io.BytesIO())
+        _, wrapped_height = text_box.wrap(
+            primary_rpm_field._colWidths[0],
+            primary_rpm_field._rowHeights[0],
+        )
+        self.assertLessEqual(
+            wrapped_height,
+            primary_rpm_field._rowHeights[0],
+        )
+        self.assertEqual(
+            details._rowHeights,
+            [
+                7 * mm,
+                theme.PDF_CARD_BODY_ROW_MM * mm,
+                theme.PDF_CARD_BODY_ROW_MM * mm,
+                theme.PDF_CARD_BODY_ROW_MM * mm,
+            ],
+        )
 
     def test_pdf_patch_body_uses_white_text_only_in_direction_cell(self):
         self.assertEqual(
@@ -940,6 +1358,11 @@ class LeaderboardCliTests(unittest.TestCase):
                 "破片手榴弹": frag,
                 "遥控炸药": nitro,
             }
+            weapon_icons = {}
+            for weapon in lb.card_weapon_items(cards):
+                icon = root / ("weapon-%s.png" % weapon.icon_key)
+                Image.new("RGBA", (36, 12), "black").save(icon)
+                weapon_icons[weapon.icon_key] = icon
             stdout = io.StringIO()
             stderr = io.StringIO()
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
@@ -956,6 +1379,7 @@ class LeaderboardCliTests(unittest.TestCase):
                     ],
                     card_loader=lambda path: cards,
                     gadget_icon_preparer=lambda items, path: gadget_icons,
+                    weapon_icon_loader=lambda items, path: weapon_icons,
                     source_loader=lambda path: make_report_sources(),
                 )
 
@@ -1104,7 +1528,12 @@ class LeaderboardBatchLauncherTests(unittest.TestCase):
             "-m r6_report.leaderboards",
             content,
         )
-        self.assertIn('--output-dir "%~dp0output"', content)
+        self.assertIn('--inputs-dir "%~dp0inputs"', content)
+        self.assertIn(
+            '--input "%~dp0~temp\\r6_operator_stats.xlsx"',
+            content,
+        )
+        self.assertIn('--output-dir "%~dp0~outputs"', content)
         self.assertIn('set "EXIT_CODE=%ERRORLEVEL%"', content)
         self.assertIn("exit /b %EXIT_CODE%", content)
         self.assertNotIn(" del ", content.lower())

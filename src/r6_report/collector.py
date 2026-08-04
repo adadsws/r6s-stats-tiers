@@ -1,4 +1,4 @@
-"""Collect validated Huiji data, icon, and patch snapshots under data/."""
+"""Collect validated Huiji data, icon, and patch snapshots under inputs/."""
 
 import argparse
 import json
@@ -165,8 +165,14 @@ def collect_snapshot(
             gadget_items,
             icon_stage / "gadget",
         )
+        weapon_items = _weapon_items(rows)
+        weapon_paths = client.prepare_weapon_icons(
+            weapon_items,
+            icon_stage / "weapon",
+        )
         _validate_operator_icons(icon_stage / "operator", operator_names)
         _validate_gadget_icons(gadget_paths, gadget_items, icon_stage / "gadget")
+        _validate_weapon_icons(weapon_paths, weapon_items, icon_stage / "weapon")
 
         wiki_manifest = parse_wiki_manifest(wiki_document)
         _index_url, parsed_patches = parse_patch_document(patch_document)
@@ -207,6 +213,33 @@ def _gadget_items(
     return tuple(unique.values())
 
 
+def _weapon_items(
+    rows: Mapping[str, Sequence[operator_stats.OperatorRow]]
+) -> Tuple[tier_chart.WeaponItem, ...]:
+    items = []
+    for side in operator_stats.SIDES:
+        for row in rows[side]:
+            for rate in row.primary_automatic + row.secondary_automatic:
+                items.append(
+                    tier_chart.WeaponItem(
+                        rate.name,
+                        tier_chart.weapon_icon_key(rate.name),
+                        int(rate.firerate),
+                    )
+                )
+            for rate in row.primary_semiautomatic + row.secondary_shotguns:
+                items.append(
+                    tier_chart.WeaponItem(
+                        rate.name,
+                        tier_chart.weapon_icon_key(rate.name),
+                    )
+                )
+    unique = {}
+    for item in items:
+        unique.setdefault(item.icon_key, item)
+    return tuple(unique.values())
+
+
 def _validate_operator_icons(directory: Path, names: Iterable[str]) -> None:
     for name in names:
         filename = operator_stats.operator_key(name) + ".png"
@@ -234,6 +267,23 @@ def _validate_gadget_icons(
             raise CollectionError("gadget icon is outside snapshot: %s" % name)
         if not _valid_image(resolved):
             raise CollectionError("missing or invalid gadget icon: %s" % name)
+
+
+def _validate_weapon_icons(
+    paths: Mapping[str, Path],
+    items: Iterable[tier_chart.WeaponItem],
+    directory: Path,
+) -> None:
+    root = directory.resolve()
+    for item in items:
+        path = paths.get(item.icon_key)
+        if path is None:
+            raise CollectionError("missing weapon icon: %s" % item.name)
+        resolved = Path(path).resolve()
+        if root != resolved.parent and root not in resolved.parents:
+            raise CollectionError("weapon icon is outside snapshot: %s" % item.name)
+        if not _valid_image(resolved):
+            raise CollectionError("missing or invalid weapon icon: %s" % item.name)
 
 
 def _valid_image(path: Path) -> bool:
@@ -319,17 +369,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Collect current R6 Wiki data, icons, and patch snapshots."
     )
-    parser.add_argument("--data-dir", type=Path, default=Path("data"))
+    parser.add_argument("--inputs-dir", type=Path, default=Path("inputs"))
     parser.add_argument(
         "--archive-dir",
         type=Path,
-        default=Path("~archived") / "data-snapshots",
+        default=Path("~archive") / "data-snapshots",
     )
     parser.add_argument("--temp-dir", type=Path, default=Path("~temp"))
     arguments = parser.parse_args(argv)
     try:
         manifest = collect_snapshot(
-            data_dir=arguments.data_dir,
+            data_dir=arguments.inputs_dir,
             archive_dir=arguments.archive_dir,
             temp_dir=arguments.temp_dir,
             now=datetime.now(timezone.utc).astimezone(),
@@ -342,7 +392,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "数据快照：%s %s · %s"
         % (manifest.season, manifest.patch, manifest.fetched_at.isoformat())
     )
-    print("数据目录：%s" % arguments.data_dir.resolve())
+    print("输入目录：%s" % arguments.inputs_dir.resolve())
     return 0
 
 

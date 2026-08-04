@@ -145,6 +145,17 @@ class FakeHuijiClient:
             paths[item.name] = path
         return paths
 
+    def prepare_weapon_icons(self, items, directory):
+        directory.mkdir(parents=True)
+        paths = {}
+        for item in items:
+            if item.icon_key in paths:
+                continue
+            path = directory / (item.icon_key + ".png")
+            Image.new("RGBA", (24, 8), "black").save(path)
+            paths[item.icon_key] = path
+        return paths
+
     @staticmethod
     def assert_title(actual, expected):
         if actual != expected:
@@ -179,6 +190,12 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(manifest.patch, "Y11S2.2")
             self.assertTrue((data_dir / "wiki" / "operator.json").is_file())
             self.assertTrue((data_dir / "icons" / "operator" / "badge" / "ace.png").is_file())
+            self.assertTrue(
+                (data_dir / "icons" / "weapon" / "r4-c.png").is_file()
+            )
+            self.assertTrue(
+                (data_dir / "icons" / "weapon" / "smg-11.png").is_file()
+            )
             patches = json.loads(
                 (data_dir / "patches" / "patches.json").read_text(encoding="utf-8")
             )

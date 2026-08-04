@@ -11,6 +11,8 @@ COLOURS: Mapping[str, str] = {
     "text_muted": "595959",
     "card_fill": "F4F5F7",
     "border": "CDD1D5",
+    "card_grid": "8F969E",
+    "card_divider": "666D75",
     "missing_fill": "D9D9D9",
     "title_fill": "17191D",
     "sheet_title_fill": "1F4E78",
@@ -53,13 +55,17 @@ PDF_FONT_SIZES: Mapping[str, float] = {
     "page": 7,
 }
 
-GADGETS_PER_LINE = 4
 PDF_CARD_BODY_ROW_MM = 6
 PDF_GADGET_ICON_BOX_MM = PDF_CARD_BODY_ROW_MM
+PDF_WEAPON_ICON_AREA_MM = 12
+PDF_WEAPON_ICON_HEIGHT_MM = 2.8
 XLSX_CARD_BODY_ROW_PT = 17
 XLSX_GADGET_TOKEN_PX: Tuple[int, int] = (24, 22)
 XLSX_GADGET_ICON_BOX_PX = 22
-XLSX_GADGET_COLUMN_OFFSET_PX = 14
+XLSX_WEAPON_ICON_AREA_PX = 44
+XLSX_WEAPON_ICON_HEIGHT_PX = 10
+XLSX_WEAPON_ICON_GAP_PX = 1
+XLSX_WEAPON_ICON_X_OFFSET_PX = 58
 
 
 def feature_text(label: str, present: bool) -> str:
