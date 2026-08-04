@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-08-05
+
+### Changed
+
+- 移除根目录中的 `~archive.md`，保留本地 `~archive/` 归档目录。
+
 ## 2026-08-04
 
 ### Added
