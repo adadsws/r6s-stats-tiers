@@ -15,16 +15,18 @@ class PackageLayoutTests(unittest.TestCase):
         ):
             self.assertTrue((root / required).is_file(), required)
         for required_dir in (
-            "inputs",
+            "data",
             "docs/plans",
             "docs/finished_plans",
-            "~archive",
+            "docs/lessons",
         ):
             self.assertTrue((root / required_dir).is_dir(), required_dir)
         for legacy in (
-            "data",
+            "inputs",
             "output",
             "~archived",
+            "previews",
+            "docs/previews",
             "docs/superpowers/plans",
         ):
             self.assertFalse((root / legacy).exists(), legacy)
@@ -45,11 +47,12 @@ class PackageLayoutTests(unittest.TestCase):
         self.assertTrue(callable(operator_stats.main))
         self.assertTrue(callable(leaderboards.main))
 
-    def test_root_has_one_pipeline_batch_file(self):
+    def test_rebuild_batch_lives_under_src(self):
         root = Path(__file__).resolve().parents[1]
-        batch_files = sorted(path.name for path in root.glob("*.bat"))
-        self.assertEqual(batch_files, ["run_r6_report.bat"])
-        text = (root / batch_files[0]).read_text(encoding="utf-8")
+        self.assertEqual(tuple(root.glob("*.bat")), ())
+        batch = root / "src" / "rebuild_leaderboards.bat"
+        self.assertTrue(batch.is_file())
+        text = batch.read_text(encoding="utf-8")
         stages = (
             "-m r6_report.collector",
             "-m r6_report.operator_stats",
@@ -59,20 +62,24 @@ class PackageLayoutTests(unittest.TestCase):
         self.assertEqual(positions, tuple(sorted(positions)))
         self.assertIn("if errorlevel 1", text)
         self.assertIn('set "PYTHONUTF8=1"', text)
-        self.assertIn('--inputs-dir "%~dp0inputs"', text)
+        self.assertIn('set "PROJECT_ROOT=%%~fI"', text)
+        self.assertIn('cd /d "%PROJECT_ROOT%"', text)
+        self.assertIn("仅用于重新采集数据并重建榜单", text)
+        self.assertIn("直接使用 docs\\outputs 中的成品", text)
+        self.assertIn('--data-dir "%PROJECT_ROOT%\\data"', text)
         self.assertIn(
-            '--archive-dir "%~dp0~archive\\data-snapshots"',
+            '--archive-dir "%PROJECT_ROOT%\\~archive\\data-snapshots"',
             text,
         )
         self.assertIn(
-            '--output "%~dp0~temp\\r6_operator_stats.xlsx"',
+            '--output "%PROJECT_ROOT%\\~temp\\r6_operator_stats.xlsx"',
             text,
         )
-        self.assertIn('--output-dir "%~dp0~outputs"', text)
+        self.assertIn('--output-dir "%PROJECT_ROOT%\\~outputs"', text)
 
     def test_pipeline_batch_uses_crlf_and_git_preserves_it(self):
         root = Path(__file__).resolve().parents[1]
-        batch = (root / "run_r6_report.bat").read_bytes()
+        batch = (root / "src" / "rebuild_leaderboards.bat").read_bytes()
         self.assertEqual(batch.count(b"\n"), batch.count(b"\r\n"))
         attributes = (root / ".gitattributes").read_text(encoding="utf-8")
         self.assertIn("*.bat text eol=crlf", attributes)
@@ -90,11 +97,12 @@ class PackageLayoutTests(unittest.TestCase):
             "Athieno",
             "YouTube",
             "final_frame",
-            "inputs/athieno/latest.json",
+            "data/athieno/latest.json",
         ):
             self.assertIn(required, skill)
         for forbidden in (
             "run_r6_report.bat",
+            "rebuild_leaderboards.bat",
             "Wiki",
             ".xlsx",
             ".pdf",

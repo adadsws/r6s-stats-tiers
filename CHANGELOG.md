@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-22
+
+### Changed
+
+- 将 Athieno、Wiki、补丁和图标快照从 `inputs/` 迁移到语义更准确的 `data/`，CLI 参数同步改为 `--data-dir`。
+- 更新项目规则、开发上下文和布局测试，使数据、临时产物、交付物与归档边界一致。
+- 精简项目根目录，归档非必要的额外目录说明文档。
+- 将榜单重建脚本移至 `src/rebuild_leaderboards.bat`，并明确普通用户直接下载 `docs/outputs/` 成品。
+- 更新 Athieno Y11S3 视频评分、78 名干员 Wiki 数据、图标和后续补丁快照，并重新生成五类 XLSX、PDF 与逐页 PNG 固定示例。
+- 修复五类榜单的等级内排序，统一按视频原始分数、最高主武器射速、干员速度、稀有枪械最佳档、次要装备最佳档的固定多级优先级排列。
+- README 改为直接下载与更新报表，预览复用 `docs/outputs/图片版/`，移除重复的 `docs/previews/` 和“功能亮点”章节。
+- README 的 PDF 报告链接同步指向 `docs/outputs/`。
+
 ## 2026-08-05
 
 ### Changed

@@ -1,4 +1,4 @@
-"""Collect validated Huiji data, icon, and patch snapshots under inputs/."""
+"""Collect validated Huiji data, icon, and patch snapshots under data/."""
 
 import argparse
 import json
@@ -369,7 +369,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Collect current R6 Wiki data, icons, and patch snapshots."
     )
-    parser.add_argument("--inputs-dir", type=Path, default=Path("inputs"))
+    parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument(
         "--archive-dir",
         type=Path,
@@ -379,7 +379,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     arguments = parser.parse_args(argv)
     try:
         manifest = collect_snapshot(
-            data_dir=arguments.inputs_dir,
+            data_dir=arguments.data_dir,
             archive_dir=arguments.archive_dir,
             temp_dir=arguments.temp_dir,
             now=datetime.now(timezone.utc).astimezone(),
@@ -392,7 +392,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "数据快照：%s %s · %s"
         % (manifest.season, manifest.patch, manifest.fetched_at.isoformat())
     )
-    print("输入目录：%s" % arguments.inputs_dir.resolve())
+    print("数据目录：%s" % arguments.data_dir.resolve())
     return 0
 
 

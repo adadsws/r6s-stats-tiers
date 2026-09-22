@@ -49,7 +49,7 @@ HEADERS = (
 OPERATOR_FIELDS = ("id", "name", "camp", "speed", "_index", "props")
 WEAPON_FIELDS = ("id", "zh_model", "firerate", "projectile", "index", "type", "equipment")
 CONFIG_FIELDS = ("id", "user")
-DEFAULT_INPUTS_DIR = Path("inputs")
+DEFAULT_DATA_DIR = Path("data")
 WEAPON_NAME_ALIASES = {
     "P10 RONI转换套件衍生型": "P10 RONI",
 }
@@ -901,7 +901,7 @@ def main(
     source_loader: Callable[[Path], ReportSources] = load_report_sources,
 ) -> int:
     parser = argparse.ArgumentParser(description="Export Rainbow Six operator automatic weapon statistics.")
-    parser.add_argument("--inputs-dir", type=Path, default=DEFAULT_INPUTS_DIR)
+    parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument(
         "--output",
         default=str(Path("~temp") / "r6_operator_stats.xlsx"),
@@ -912,17 +912,17 @@ def main(
     args = parser.parse_args(argv)
     output = Path(args.output)
     try:
-        rows = fetcher() if fetcher is not None else load_snapshot_rows(args.inputs_dir)
+        rows = fetcher() if fetcher is not None else load_snapshot_rows(args.data_dir)
         operator_names = [row.name for camp in SIDES for row in rows[camp]]
-        ratings_path = args.ratings or args.inputs_dir / "athieno" / "latest.json"
-        icons_path = args.icons_dir or args.inputs_dir / "icons" / "operator"
+        ratings_path = args.ratings or args.data_dir / "athieno" / "latest.json"
+        icons_path = args.icons_dir or args.data_dir / "icons" / "operator"
         ratings = rating_loader(ratings_path, operator_names)
         icon_dir = (
             icon_preparer(rows, icons_path)
             if fetcher is not None
             else icons_path
         )
-        report_sources = source_loader(args.inputs_dir)
+        report_sources = source_loader(args.data_dir)
         write_workbook(output, rows, ratings, icon_dir, report_sources)
     except (OSError, R6StatsError, SourceDataError, ValueError) as error:
         print("错误：%s" % error, file=sys.stderr)

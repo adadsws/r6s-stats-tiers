@@ -285,38 +285,23 @@ def best_dimension_rank(
     return min(order.index(item) for item in memberships)
 
 
-def _self_metric_sort_key(
-    card: OperatorCard,
-    dimension: str,
-) -> Tuple[int, ...]:
-    if dimension == "video":
-        return (-card.score,)
-    if dimension == "primary_rpm":
-        return (-max(card.primary_rpms, default=-1),)
-    if dimension == "speed":
-        return (-card.speed,)
-    return ()
-
-
 def sort_cards_for_band(
     cards: Iterable[OperatorCard],
     current_dimension: str,
     side: str,
 ) -> List[OperatorCard]:
     _validate_dimension_and_side(current_dimension, side)
-    dimensions = tuple(
-        dimension
-        for dimension in DIMENSION_ORDER
-        if dimension != current_dimension
+    return sorted(
+        cards,
+        key=lambda card: (
+            -card.score,
+            -max(card.primary_rpms, default=-1),
+            -card.speed,
+            best_dimension_rank(card, "rare", side),
+            best_dimension_rank(card, "gadget", side),
+            card.source_order,
+        ),
     )
-
-    def sort_key(card: OperatorCard):
-        return _self_metric_sort_key(card, current_dimension) + tuple(
-            best_dimension_rank(card, dimension, side)
-            for dimension in dimensions
-        ) + (card.source_order,)
-
-    return sorted(cards, key=sort_key)
 
 
 def group_cards(
@@ -1092,9 +1077,9 @@ def main(
         description="从 R6 干员统计工作簿生成五个榜单工作簿"
     )
     parser.add_argument(
-        "--inputs-dir",
+        "--data-dir",
         type=Path,
-        default=Path("inputs"),
+        default=Path("data"),
     )
     parser.add_argument(
         "--input",
@@ -1130,15 +1115,15 @@ def main(
         )
         operator_icon_dir = (
             arguments.icons_dir
-            or arguments.inputs_dir / "icons" / "operator" / "badge"
+            or arguments.data_dir / "icons" / "operator" / "badge"
         )
         gadget_icon_dir = (
             arguments.gadget_icons_dir
-            or arguments.inputs_dir / "icons" / "gadget"
+            or arguments.data_dir / "icons" / "gadget"
         )
         weapon_icon_dir = (
             arguments.weapon_icons_dir
-            or arguments.inputs_dir / "icons" / "weapon"
+            or arguments.data_dir / "icons" / "weapon"
         )
         if not input_path.is_file():
             raise LeaderboardError(
@@ -1160,9 +1145,9 @@ def main(
             card_weapon_items(cards),
             weapon_icon_dir,
         )
-        report_sources = source_loader(arguments.inputs_dir)
+        report_sources = source_loader(arguments.data_dir)
         output_paths = write_all_leaderboards(
-            arguments.output_dir,
+            arguments.output_dir.resolve(),
             cards,
             operator_icon_dir,
             gadget_icons,

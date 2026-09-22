@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 from openpyxl import load_workbook
 from PIL import Image
@@ -277,18 +278,20 @@ class LeaderboardClassificationTests(unittest.TestCase):
 
 
 class LeaderboardSortingTests(unittest.TestCase):
-    def test_primary_band_uses_raw_rpm_before_video(self):
+    def test_primary_band_uses_video_before_raw_rpm(self):
         cards = [
             make_card(
                 "Higher Video Lower RPM",
                 1,
                 visible_tier="S",
+                score=95,
                 primary=(860,),
             ),
             make_card(
                 "Lower Video Higher RPM",
                 2,
                 visible_tier="A",
+                score=85,
                 primary=(900,),
             ),
         ]
@@ -301,8 +304,33 @@ class LeaderboardSortingTests(unittest.TestCase):
 
         self.assertEqual(
             [card.name for card in sorted_cards],
-            ["Lower Video Higher RPM", "Higher Video Lower RPM"],
+            ["Higher Video Lower RPM", "Lower Video Higher RPM"],
         )
+
+    def test_all_boards_share_the_same_global_priority_chain(self):
+        cards = [
+            make_card("Gadget", 5, gadgets=("破片手榴弹",)),
+            make_card("Rare", 4, has_secondary_shotgun=True),
+            make_card("Speed", 3, speed=3),
+            make_card("RPM", 2, primary=(900,), speed=1),
+            make_card("Video", 1, score=90, primary=(700,), speed=1),
+            make_card("Fallback", 6),
+        ]
+        expected = ["Video", "RPM", "Speed", "Rare", "Gadget", "Fallback"]
+
+        for dimension in lb.DIMENSION_ORDER:
+            with self.subTest(dimension=dimension):
+                self.assertEqual(
+                    [
+                        card.name
+                        for card in lb.sort_cards_for_band(
+                            cards,
+                            dimension,
+                            "进攻方",
+                        )
+                    ],
+                    expected,
+                )
 
     def test_video_band_uses_raw_score_before_primary_rpm(self):
         cards = [
@@ -372,6 +400,7 @@ class LeaderboardSortingTests(unittest.TestCase):
                 "A Three",
                 1,
                 visible_tier="A",
+                score=85,
                 speed=3,
                 primary=(900,),
             ),
@@ -379,6 +408,7 @@ class LeaderboardSortingTests(unittest.TestCase):
                 "S One",
                 2,
                 visible_tier="S",
+                score=95,
                 speed=1,
                 primary=(900,),
             ),
@@ -386,6 +416,7 @@ class LeaderboardSortingTests(unittest.TestCase):
                 "A Two",
                 3,
                 visible_tier="A",
+                score=85,
                 speed=2,
                 primary=(900,),
             ),
@@ -408,6 +439,7 @@ class LeaderboardSortingTests(unittest.TestCase):
                 "A High Primary",
                 1,
                 visible_tier="A",
+                score=85,
                 speed=3,
                 primary=(900,),
             ),
@@ -415,6 +447,7 @@ class LeaderboardSortingTests(unittest.TestCase):
                 "S Low Primary",
                 2,
                 visible_tier="S",
+                score=95,
                 speed=3,
                 primary=(700,),
             ),
@@ -422,6 +455,7 @@ class LeaderboardSortingTests(unittest.TestCase):
                 "A Low Primary",
                 3,
                 visible_tier="A",
+                score=85,
                 speed=3,
                 primary=(700,),
             ),
@@ -440,12 +474,14 @@ class LeaderboardSortingTests(unittest.TestCase):
                 "Higher Video Current Membership Only",
                 1,
                 visible_tier="S",
+                score=95,
                 has_semiautomatic=True,
             ),
             make_card(
                 "Lower Video Also Higher Membership",
                 2,
                 visible_tier="A",
+                score=85,
                 has_semiautomatic=True,
                 has_secondary_shotgun=True,
             ),
@@ -467,12 +503,14 @@ class LeaderboardSortingTests(unittest.TestCase):
                 "Higher Video Current Membership Only",
                 1,
                 visible_tier="S",
+                score=95,
                 gadgets=("闪光弹",),
             ),
             make_card(
                 "Lower Video Also Higher Membership",
                 2,
                 visible_tier="A",
+                score=85,
                 gadgets=("破片手榴弹", "闪光弹"),
             ),
         ]
@@ -1416,6 +1454,7 @@ class LeaderboardCliTests(unittest.TestCase):
                         "补丁说明",
                     ],
                 )
+
                 workbook.close()
                 pdf_path = path.with_suffix(".pdf")
                 self.assertIn(str(pdf_path.resolve()), stdout.getvalue())
@@ -1498,6 +1537,38 @@ class LeaderboardCliTests(unittest.TestCase):
                 for width in band_widths:
                     self.assertAlmostEqual(width, expected_width, delta=0.1)
 
+    def test_main_resolves_relative_tilde_output_before_pdf_rendering(self):
+        cards = {
+            "进攻方": [make_card("Attacker", 1)],
+            "防守方": [make_card("Defender", 1, side="防守方")],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "stats.xlsx"
+            source.touch()
+            with mock.patch.object(
+                lb,
+                "write_all_leaderboards",
+                return_value=(),
+            ) as writer:
+                result = lb.main(
+                    [
+                        "--input",
+                        str(source),
+                        "--output-dir",
+                        "~relative-output",
+                    ],
+                    card_loader=lambda path: cards,
+                    gadget_icon_preparer=lambda items, path: {},
+                    weapon_icon_loader=lambda items, path: {},
+                    source_loader=lambda path: make_report_sources(),
+                )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            writer.call_args.args[0],
+            (Path.cwd() / "~relative-output").resolve(),
+        )
+
     def test_main_reports_missing_input(self):
         with tempfile.TemporaryDirectory() as directory:
             stderr = io.StringIO()
@@ -1517,23 +1588,24 @@ class LeaderboardBatchLauncherTests(unittest.TestCase):
     def test_batch_launcher_generates_output_directory_and_preserves_exit_code(self):
         launcher = (
             Path(__file__).resolve().parents[1]
-            / "run_r6_report.bat"
+            / "src"
+            / "rebuild_leaderboards.bat"
         )
         self.assertTrue(launcher.exists())
         content = launcher.read_text(encoding="utf-8")
-        self.assertIn('cd /d "%~dp0"', content)
+        self.assertIn('cd /d "%PROJECT_ROOT%"', content)
         self.assertIn("where python", content)
         self.assertIn("where py", content)
         self.assertIn(
             "-m r6_report.leaderboards",
             content,
         )
-        self.assertIn('--inputs-dir "%~dp0inputs"', content)
+        self.assertIn('--data-dir "%PROJECT_ROOT%\\data"', content)
         self.assertIn(
-            '--input "%~dp0~temp\\r6_operator_stats.xlsx"',
+            '--input "%PROJECT_ROOT%\\~temp\\r6_operator_stats.xlsx"',
             content,
         )
-        self.assertIn('--output-dir "%~dp0~outputs"', content)
+        self.assertIn('--output-dir "%PROJECT_ROOT%\\~outputs"', content)
         self.assertIn('set "EXIT_CODE=%ERRORLEVEL%"', content)
         self.assertIn("exit /b %EXIT_CODE%", content)
         self.assertNotIn(" del ", content.lower())

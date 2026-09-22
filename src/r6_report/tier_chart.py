@@ -796,7 +796,7 @@ def main(
     parser = argparse.ArgumentParser(
         description="从 R6 干员统计工作簿生成横向评分阶层简图"
     )
-    parser.add_argument("--inputs-dir", type=Path, default=Path("inputs"))
+    parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("--input", type=Path, default=None)
     parser.add_argument(
         "--output",
@@ -815,11 +815,11 @@ def main(
         input_path = arguments.input or Path("~temp") / "r6_operator_stats.xlsx"
         icon_dir = (
             arguments.icons_dir
-            or arguments.inputs_dir / "icons" / "operator" / "badge"
+            or arguments.data_dir / "icons" / "operator" / "badge"
         )
         gadget_dir = (
             arguments.gadget_icons_dir
-            or arguments.inputs_dir / "icons" / "gadget"
+            or arguments.data_dir / "icons" / "gadget"
         )
         cards = load_operator_cards(input_path)
         for side in SOURCE_SHEETS:
@@ -837,7 +837,7 @@ def main(
             for gadget in card.gadgets
         )
         gadget_icons = gadget_icon_preparer(gadget_items, gadget_dir)
-        report_sources = source_loader(arguments.inputs_dir)
+        report_sources = source_loader(arguments.data_dir)
         write_tier_workbook(
             arguments.output,
             cards,

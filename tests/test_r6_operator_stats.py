@@ -578,16 +578,16 @@ class RatingAndIconTests(unittest.TestCase):
                 }), encoding="utf-8")
                 stats.load_ratings(path, ("Alice", "Bob"))
 
-    def test_production_rating_file_has_77_entries(self):
+    def test_production_rating_file_has_78_entries(self):
         path = (
             Path(__file__).resolve().parents[1]
-            / "inputs"
+            / "data"
             / "athieno"
             / "latest.json"
         )
         names = [name for tier in json.loads(path.read_text(encoding="utf-8"))["tiers"].values() for name in tier]
-        self.assertEqual(len(names), 77)
-        self.assertEqual(len(set(names)), 77)
+        self.assertEqual(len(names), 78)
+        self.assertEqual(len(set(names)), 78)
 
     def test_builds_transparent_pure_white_icon(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -609,17 +609,21 @@ class RatingAndIconTests(unittest.TestCase):
 
 class BatchLauncherTests(unittest.TestCase):
     def test_batch_launcher_runs_from_project_directory_and_preserves_exit_code(self):
-        launcher = Path(__file__).resolve().parents[1] / "run_r6_report.bat"
+        launcher = (
+            Path(__file__).resolve().parents[1]
+            / "src"
+            / "rebuild_leaderboards.bat"
+        )
         self.assertTrue(launcher.exists(), "batch launcher does not exist")
 
         content = launcher.read_text(encoding="utf-8")
-        self.assertIn('cd /d "%~dp0"', content)
+        self.assertIn('cd /d "%PROJECT_ROOT%"', content)
         self.assertIn('where python', content)
         self.assertIn('where py', content)
         self.assertIn("-m r6_report.operator_stats", content)
-        self.assertIn('--inputs-dir "%~dp0inputs"', content)
+        self.assertIn('--data-dir "%PROJECT_ROOT%\\data"', content)
         self.assertIn(
-            '--output "%~dp0~temp\\r6_operator_stats.xlsx"',
+            '--output "%PROJECT_ROOT%\\~temp\\r6_operator_stats.xlsx"',
             content,
         )
         self.assertIn('set "EXIT_CODE=%ERRORLEVEL%"', content)
