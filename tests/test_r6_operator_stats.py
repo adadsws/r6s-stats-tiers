@@ -578,7 +578,7 @@ class RatingAndIconTests(unittest.TestCase):
                 }), encoding="utf-8")
                 stats.load_ratings(path, ("Alice", "Bob"))
 
-    def test_production_rating_file_has_77_entries(self):
+    def test_production_rating_file_has_78_entries(self):
         path = (
             Path(__file__).resolve().parents[1]
             / "inputs"
@@ -586,8 +586,8 @@ class RatingAndIconTests(unittest.TestCase):
             / "latest.json"
         )
         names = [name for tier in json.loads(path.read_text(encoding="utf-8"))["tiers"].values() for name in tier]
-        self.assertEqual(len(names), 77)
-        self.assertEqual(len(set(names)), 77)
+        self.assertEqual(len(names), 78)
+        self.assertEqual(len(set(names)), 78)
 
     def test_builds_transparent_pure_white_icon(self):
         with tempfile.TemporaryDirectory() as directory:
