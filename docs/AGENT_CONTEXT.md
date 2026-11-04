@@ -22,6 +22,17 @@
 
 `tier_chart` 的 CLI 只从 `data/` 读取已验证的次要装备图标；采集所用下载辅助函数仅由 `collector` 通过 `wiki_client` 调用。
 
+## 评测集与验收
+
+| 来源 | 输入 | 预期行为（过程） | 预期输出（结果） | 判定证据 |
+|---|---|---|---|---|
+| 真实：项目离线生成约束 | 已验证的 `data/` 快照；运行报表测试 | 生成阶段只读取本地快照，不调用采集网络入口 | 五类榜单的 XLSX、PDF、PNG 结构正确 | `tests/test_r6_leaderboards.py`、`tests/test_r6_operator_stats.py` |
+| 真实：项目流水线约束 | `src/rebuild_leaderboards.bat`；采集阶段失败 | 按 collector → operator_stats → leaderboards 顺序执行，失败即停止 | 后续阶段不运行，退出码非零 | `tests/test_project_layout.py` 的入口契约；真实失败路径需单独试运行 |
+| 真实：文档布局规则 | 根目录和 `docs/` | 检查项目文档归属与链接，不读取 Markdown 作为运行数据 | README 留在根目录，规则、上下文和变更记录位于 `docs/` | `tests/test_project_layout.py`、`git ls-files` |
+| 预测：输入快照异常 | 缺字段、损坏或不一致的数据快照 | 校验失败时保留上一份有效快照，停止下游处理 | 不发布不完整的新数据或榜单 | `tests/test_collector.py`、`tests/test_sources.py` |
+
+交付时记录实际测试命令、输入状态和结果；表中测试文件仅是判定入口，未实际运行的样例不视为通过。图形布局变化还需人工核对三种输出格式。
+
 ## 已知问题
 
 - 一键入口面向 Windows，并依赖可调用的 Python 3.9+ 与 `curl.exe`。
