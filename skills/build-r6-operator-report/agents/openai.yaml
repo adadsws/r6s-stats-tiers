@@ -1,0 +1,4 @@
+interface:
+  display_name: "Athieno Tier 更新"
+  short_description: "从最新完整视频人工核对并更新干员 Tier 数据"
+  default_prompt: "使用 $build-r6-operator-report 核对 Athieno 最新完整 Tier List 视频，并只更新 data/athieno/latest.json。"
