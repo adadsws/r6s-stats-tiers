@@ -1,3 +1,4 @@
+# Check tier parsing, rendering, and the offline command-line boundary.
 import contextlib
 import io
 import os
@@ -7,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from openpyxl import Workbook
 from openpyxl import load_workbook
@@ -568,6 +570,35 @@ class WorkbookLayoutTests(unittest.TestCase):
 
 
 class CliTests(unittest.TestCase):
+    def test_main_fails_offline_when_snapshot_gadget_icon_is_missing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.xlsx"
+            badges = root / "badges"
+            gadgets = root / "gadgets"
+            badges.mkdir()
+            gadgets.mkdir()
+            make_source(source, [source_row("Alice")], [source_row("Bob", score=85)])
+            for name in ("Alice", "Bob"):
+                Image.new("RGBA", (64, 64), "red").save(
+                    badges / f"{chart.operator_key(name)}.png"
+                )
+            stderr = io.StringIO()
+            with patch.object(chart, "prepare_gadget_icons") as downloader:
+                with contextlib.redirect_stderr(stderr):
+                    result = chart.main(
+                        [
+                            "--input", str(source),
+                            "--output", str(root / "tier.xlsx"),
+                            "--icons-dir", str(badges),
+                            "--gadget-icons-dir", str(gadgets),
+                        ],
+                        source_loader=lambda path: make_report_sources(),
+                    )
+            self.assertEqual(result, 1)
+            self.assertIn("找不到已验证的次要装备图标", stderr.getvalue())
+            downloader.assert_not_called()
+
     def test_main_generates_workbook_and_prints_counts_and_absolute_path(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

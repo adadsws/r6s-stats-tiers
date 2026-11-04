@@ -10,14 +10,17 @@
 - `data/`：Git 跟踪的 Athieno 评分、Wiki、补丁和图标数据快照；远程发布前必须检查公开边界。
 - `tests/`：基于 `unittest` 的单元、集成和布局契约测试。
 - `skills/build-r6-operator-report/`：只负责人工核对 Athieno 最新完整 Tier List。
-- `docs/`：用户可下载的固定报表示例、图片版、当前计划、已完成计划和经验记录。
+- `docs/`：项目规则、开发规范、变更记录、用户可下载的固定报表示例、当前计划、已完成计划和经验记录。
 - `~temp/`：可重建的中间工作簿、采集暂存和日志，不进入 Git。
 - `~outputs/`：待检查或交付的生成结果，不进入 Git。
 - `~archive/`：已确认封存的历史文件，本地 Git 保留但禁止直接远程发布。
+- `README.md` / `README_EN.md`：中文和英文用户入口；报告内容仍为中文。
 
 ## 开发流程
 
 使用 Codex bundled Python 或按 `requirements.txt` 创建的 Python 3.9+ 虚拟环境。修改行为前先写失败测试；验证命令为 `$env:PYTHONPATH='src'; $env:PYTHONUTF8='1'; python -m unittest discover -s tests -v`。报表渲染变化还需运行 `src/rebuild_leaderboards.bat`，人工核对 `~outputs/` 中的 XLSX、PDF 和 PNG，再决定是否更新 `docs/` 示例。
+
+`tier_chart` 的 CLI 只从 `data/` 读取已验证的次要装备图标；采集所用下载辅助函数仅由 `collector` 通过 `wiki_client` 调用。
 
 ## 已知问题
 

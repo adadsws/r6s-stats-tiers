@@ -1,5 +1,7 @@
 # R6 干员中文榜单 · Y11S3
 
+[中文版](README.md) | [English](README_EN.md)
+
 <p align="center">
   <strong>把视频评分、武器数据、干员速度与装备配置，汇成一套真正方便比较的中文榜单。</strong>
 </p>

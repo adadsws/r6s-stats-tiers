@@ -1,3 +1,4 @@
+# Build the tier workbook from validated snapshots; collector-only helpers fetch icons.
 from __future__ import annotations
 
 import argparse
@@ -785,12 +786,26 @@ def _excel_image(path: Path) -> ExcelImage:
     return ExcelImage(io.BytesIO(Path(path).read_bytes()))
 
 
+def load_snapshot_gadget_icons(items: Iterable[GadgetItem], directory: Path) -> Dict[str, Path]:
+    """Resolve validated gadget icons from the data snapshot without network access."""
+    icon_dir = Path(directory)
+    icons = {}
+    for name in dict.fromkeys(item.name for item in items):
+        if name not in GADGET_FILES:
+            raise TierChartError(f"未知次要装备：{name}")
+        path = icon_dir / _gadget_filename(name)
+        if not path.is_file() or not _is_valid_image(path):
+            raise TierChartError(f"找不到已验证的次要装备图标：{path}")
+        icons[name] = path
+    return icons
+
+
 def main(
     argv: Optional[List[str]] = None,
     *,
     gadget_icon_preparer: Callable[
         [Iterable[GadgetItem], Path], Mapping[str, Path]
-    ] = prepare_gadget_icons,
+    ] = load_snapshot_gadget_icons,
     source_loader: Callable[[Path], ReportSources] = load_report_sources,
 ) -> int:
     parser = argparse.ArgumentParser(

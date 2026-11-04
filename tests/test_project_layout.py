@@ -1,3 +1,4 @@
+# Guard the repository layout and the project-specific build entrypoint.
 import unittest
 from pathlib import Path
 
@@ -5,18 +6,29 @@ import _path_setup
 
 
 class PackageLayoutTests(unittest.TestCase):
+    def test_at_most_one_active_plan(self):
+        root = Path(__file__).resolve().parents[1]
+        active_plans = [
+            path
+            for path in (root / "docs" / "plans").rglob("*.md")
+            if path != root / "docs" / "plans" / "README.md"
+        ]
+        self.assertLessEqual(len(active_plans), 1, active_plans)
+
     def test_global_agents_layout_contract(self):
         root = Path(__file__).resolve().parents[1]
         for required in (
-            "AGENTS.md",
-            "AGENT_CONTEXT.md",
             "README.md",
-            "CHANGELOG.md",
+            "README_EN.md",
+            "docs/AGENTS.md",
+            "docs/AGENT_CONTEXT.md",
+            "docs/CHANGELOG.md",
         ):
             self.assertTrue((root / required).is_file(), required)
+        for misplaced in ("AGENTS.md", "AGENT_CONTEXT.md", "CHANGELOG.md"):
+            self.assertFalse((root / misplaced).exists(), misplaced)
         for required_dir in (
             "data",
-            "docs/plans",
             "docs/finished_plans",
             "docs/lessons",
         ):
